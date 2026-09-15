@@ -63,6 +63,9 @@ class SecurityConfig(
                     .requestMatchers("/api/terms", "/api/privacy").permitAll()
                     .requestMatchers("/uploads/**").permitAll()
 
+                    // PUBLIC API documentation (Swagger UI + OpenAPI json)
+                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+
                     // EVERYTHING ELSE requires login
                     .anyRequest().authenticated()
             }

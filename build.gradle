@@ -71,6 +71,11 @@ dependencies {
     // Cloudinary stores user profile photos and cover photos in the cloud.
     implementation 'com.cloudinary:cloudinary-http5:2.4.0'
 
+    // ====== API Documentation (Swagger UI) ======
+    // springdoc-openapi auto-generates OpenAPI docs from our controllers
+    // and serves the interactive Swagger UI at /swagger-ui.html
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
     // ====== Testing ======
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
