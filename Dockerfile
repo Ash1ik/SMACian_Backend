@@ -8,7 +8,9 @@
 # gradle:8.10.2-jdk17 already has both Gradle and a JDK pre-installed.
 FROM gradle:8.10.2-jdk17 AS build
 
-# Create and switch to a working directory inside the container.
+# Run the build as root so Gradle can write anywhere and the wrapper
+# executes regardless of the image's default user.
+USER root
 WORKDIR /home/app
 
 # Copy only the build files first (Gradle caches dependencies per layer,
@@ -17,14 +19,15 @@ COPY build.gradle settings.gradle ./
 COPY gradlew gradlew.bat ./
 COPY gradle ./gradle
 
-# Pre-download all Gradle dependencies (build starts much faster later).
-RUN ./gradlew dependencies --no-daemon --console=plain > /dev/null 2>&1 || true
+# Make sure the Gradle wrapper is executable, then pre-download
+# all dependencies (build starts much faster later).
+RUN chmod +x gradlew && ./gradlew dependencies --no-daemon --console=plain > /dev/null 2>&1 || true
 
 # Copy the actual source code.
 COPY src ./src
 
 # Compile the project and create the executable JAR.
-RUN ./gradlew bootJar --no-daemon --console=plain -q
+RUN ./gradlew clean bootJar --no-daemon --console=plain -q
 
 # Stage 2: RUN
 # eclipse-temurin is the official OpenJDK image. jre = runtime only, no compiler.
@@ -38,7 +41,7 @@ WORKDIR /app
 # Copy the built JAR from the build stage.
 COPY --from=build /home/app/build/libs/*.jar app.jar
 
-# The app reads the PORT environment variable (Render sets it automatically).
+# Render injects PORT and routes requests to the container's exposed port.
 EXPOSE 8080
 
 # Start the Spring Boot application.

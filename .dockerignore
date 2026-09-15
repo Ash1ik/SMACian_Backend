@@ -1,0 +1,13 @@
+.git
+.gitignore
+.gradle
+.kotlin
+.runtime
+.vscode
+bin
+build
+*.log
+Dockerfile
+.dockerignore
+render.yaml
+README.md
