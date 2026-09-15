@@ -1,0 +1,81 @@
+/*
+ * Build file for SMACian Backend (Kotlin version).
+ * This file tells Gradle:
+ *   1. Which Spring Boot version we use
+ *   2. Which Kotlin and other dependencies our project needs
+ *   3. Which JVM version to compile against
+ *
+ * Everything here is standard industry practice for a Spring Boot 3.x Kotlin project.
+ */
+
+plugins {
+    // Kotlin language plugin - compiles .kt (Kotlin) files.
+    // Also brings the standard `java` extension/toolchain support.
+    id 'org.jetbrains.kotlin.jvm' version '2.0.21'
+    // Kotlin JPA plugin - generates no-arg constructors JPA requires.
+    id 'org.jetbrains.kotlin.plugin.jpa' version '2.0.21'
+    // Spring Boot plugin packages our application into an executable JAR.
+    id 'org.springframework.boot' version '3.3.5'
+    // This plugin lets us use Spring dependency versions without specifying them manually.
+    id 'io.spring.dependency-management' version '1.1.6'
+    // Kotlin Spring plugin - makes classes open so Spring proxies work.
+    id 'org.jetbrains.kotlin.plugin.spring' version '2.0.21'
+}
+
+group = 'com.smacian'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = '17'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // ====== Kotlin ======
+    // kotlin-stdlib is the Kotlin standard library (included automatically by the Kotlin plugin).
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib'
+    // kotlin-reflect adds reflection support - needed by Spring for Kotlin.
+    implementation 'org.jetbrains.kotlin:kotlin-reflect'
+    // jackson-module-kotlin lets Jackson (the default JSON library) read and
+    // write Kotlin data classes. Without it, @RequestBody JSON would not be
+    // deserialized into our DTOs (400 "Invalid request body" errors).
+    implementation 'com.fasterxml.jackson.module:jackson-module-kotlin'
+
+    // ====== Core Spring Boot Starter ======
+    // spring-boot-starter-web gives us REST APIs (controllers, JSON handling, embedded Tomcat).
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // ====== Database ======
+    // spring-boot-starter-data-jpa handles connecting to the database and
+    // converting our Kotlin classes into database tables.
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // PostgreSQL driver - the library that allows Kotlin/Java to talk to PostgreSQL.
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // ====== Security & Authentication ======
+    // spring-boot-starter-security protects our API and handles login/authentication.
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    // JWT (JSON Web Token) libraries. We use JJWT by io.jsonwebtoken.
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    // ====== Validation ======
+    // spring-boot-starter-validation lets us validate incoming data.
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // ====== Cloudinary (free image storage) ======
+    // Cloudinary stores user profile photos and cover photos in the cloud.
+    implementation 'com.cloudinary:cloudinary-http5:2.4.0'
+
+    // ====== Testing ======
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

@@ -1,0 +1,55 @@
+# ======================================================
+# SMACian Backend - Render Blueprint
+#
+# This file lets Render create everything for you:
+#   - A free PostgreSQL database
+#   - A web service running our Spring Boot app
+#   - Automatic env variables wired together
+#
+# To deploy: push this repo to GitHub,
+# then in Render → New + → Blueprint → choose the repo.
+# ======================================================
+
+# ---------------- Database ----------------
+databases:
+  - name: smacian-db
+    databaseName: smacian
+    plan: free
+
+# ---------------- Web service ----------------
+services:
+  - type: web
+    name: smacian-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    # Render will check this URL to decide if the app is healthy.
+    healthCheckPath: /api/terms
+    envVars:
+      # Database connection (taken automatically from the DB above).
+      - key: DB_URL
+        fromDatabase:
+          name: smacian-db
+          property: internalConnectionString
+      - key: DB_USERNAME
+        fromDatabase:
+          name: smacian-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: smacian-db
+          property: password
+
+      # JWT signing secret - Render generates a random one for us.
+      - key: JWT_SECRET
+        generateValue: true
+
+      # Cloudinary keys - filter "sync: false" does NOT auto-create the
+      # value: you must paste your real keys in the dashboard after deploy.
+      # Untested uploads still work with defaults, but photo upload will fail.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

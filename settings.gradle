@@ -1,0 +1,5 @@
+/*
+ * This file tells Gradle the name of our project.
+ * It is the entry point for the Gradle build system.
+ */
+rootProject.name = 'SMACian_Backend'
