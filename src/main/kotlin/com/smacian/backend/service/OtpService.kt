@@ -22,6 +22,7 @@ import com.smacian.backend.entity.OtpCode
 import com.smacian.backend.entity.enums.OtpPurpose
 import com.smacian.backend.exception.BadRequestException
 import com.smacian.backend.repository.OtpCodeRepository
+import com.smacian.backend.util.ContactUtils
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -30,7 +31,8 @@ import java.time.LocalDateTime
 
 @Service
 class OtpService(
-    private val otpCodeRepository: OtpCodeRepository
+    private val otpCodeRepository: OtpCodeRepository,
+    private val emailService: EmailService
 ) {
 
     private val log = LoggerFactory.getLogger(OtpService::class.java)
@@ -136,14 +138,20 @@ class OtpService(
     }
 
     /*
-     * The real "sending" logic. Logs to console for learning.
-     * Replace with your email/SMS provider when ready.
+     * The real "sending" logic.
+     * Email contacts get the code delivered by Brevo; phone numbers are
+     * logged to the console until an SMS provider is added.
      */
     private fun deliverOtp(contact: String, code: String) {
         log.info("========================================")
         log.info("OTP for {} : {}", contact, code)
         log.info("This OTP expires in {} minutes.", OTP_EXPIRY_MINUTES)
         log.info("========================================")
+
+        // Email contacts -> real delivery via Brevo. Phones stay console-only for now.
+        if (ContactUtils.isEmail(contact)) {
+            emailService.sendOtpEmail(contact, code)
+        }
     }
 
     /*
