@@ -15,7 +15,11 @@
 package com.smacian.backend.repository
 
 import com.smacian.backend.entity.User
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.util.Optional
 
@@ -43,4 +47,23 @@ interface UserRepository : JpaRepository<User, Long> {
      * SQL: SELECT COUNT(*) FROM users WHERE phone = ?
      */
     fun existsByPhone(phone: String): Boolean
+
+    // Uniqueness checks that ignore the user's own row (for profile edits).
+    fun existsByEmailAndIdNot(email: String, id: Long): Boolean
+
+    fun existsByPhoneAndIdNot(phone: String, id: Long): Boolean
+
+    /*
+     * People search: case-insensitive ILIKE on full name OR designation.
+     * Only active users are returned; sorted by updatedAt desc (via Pageable sort).
+     */
+    @Query(
+        "SELECT u FROM User u " +
+            "WHERE u.isActive = true AND (" +
+            "  :q = '' " +
+            "  OR lower(concat(u.firstName, ' ', u.lastName)) LIKE lower(concat('%', :q, '%')) " +
+            "  OR lower(coalesce(u.designation, '')) LIKE lower(concat('%', :q, '%'))" +
+            ")"
+    )
+    fun searchPeople(@Param("q") q: String, pageable: Pageable): Page<User>
 }

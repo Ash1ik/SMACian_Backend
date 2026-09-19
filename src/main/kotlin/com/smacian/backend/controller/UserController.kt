@@ -17,14 +17,16 @@
  */
 package com.smacian.backend.controller
 
-import com.smacian.backend.dto.request.UpdateProfileRequest
+import com.smacian.backend.dto.request.UpdateProfileRequestExtended
 import com.smacian.backend.dto.response.UserResponse
 import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.UserService
 import jakarta.validation.Valid
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -58,11 +60,14 @@ class UserController(
     }
 
     // ====================================================================
-    // 2. UPDATE MY PROFILE (name, date of birth, gender)
+    // 2. UPDATE MY PROFILE (details, social links, experience, education)
     // ====================================================================
+    // Accepts UpdateProfileRequestExtended. experiences/educations with an
+    // id are updated (must belong to the user), without an id they are
+    // created; existing entries with no id sent are left untouched.
 
     @PutMapping("/profile")
-    fun updateProfile(@Valid @RequestBody request: UpdateProfileRequest): ResponseEntity<UserResponse> {
+    fun updateProfile(@Valid @RequestBody request: UpdateProfileRequestExtended): ResponseEntity<UserResponse> {
         val updated = userService.updateProfile(CurrentUser.getUserId(), request)
         return ResponseEntity.ok(updated)
     }
@@ -82,7 +87,28 @@ class UserController(
     }
 
     // ====================================================================
-    // 4. UPLOAD COVER PHOTO
+    // 4. DELETE MY EXPERIENCE ENTRY
+    // ====================================================================
+    // 404 if the entry doesn't exist, 403 if it belongs to another user.
+
+    @DeleteMapping("/experiences/{experienceId}")
+    fun deleteExperience(@PathVariable experienceId: Long): ResponseEntity<Void> {
+        userService.deleteExperience(CurrentUser.getUserId(), experienceId)
+        return ResponseEntity.noContent().build()
+    }
+
+    // ====================================================================
+    // 5. DELETE MY EDUCATION ENTRY
+    // ====================================================================
+
+    @DeleteMapping("/educations/{educationId}")
+    fun deleteEducation(@PathVariable educationId: Long): ResponseEntity<Void> {
+        userService.deleteEducation(CurrentUser.getUserId(), educationId)
+        return ResponseEntity.noContent().build()
+    }
+
+    // ====================================================================
+    // 6. UPLOAD COVER PHOTO
     // ====================================================================
     @PostMapping(value = ["/cover/photo"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun updateCoverPhoto(@RequestPart("file") file: MultipartFile): ResponseEntity<UserResponse> {

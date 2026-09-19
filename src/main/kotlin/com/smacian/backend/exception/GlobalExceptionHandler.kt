@@ -107,6 +107,45 @@ class GlobalExceptionHandler {
     }
 
     // ====================================================================
+    // 3b. FIELD-LEVEL VALIDATION FROM THE SERVICE LAYER
+    // ====================================================================
+    // Thrown by validators like ProfileValidation so every failing field
+    // is returned with its UI-matching key (e.g. "endDate").
+
+    @ExceptionHandler(ValidationException::class)
+    fun handleValidation(ex: ValidationException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val fieldErrors = ex.errors.map { (field, message) ->
+            ErrorResponse.FieldErrorDetail(field = field, message = message)
+        }
+
+        val response = ErrorResponse(
+            status = HttpStatus.BAD_REQUEST.value(),
+            error = "Validation Failed",
+            message = "Please fix the following errors",
+            path = getPath(request),
+            fieldErrors = fieldErrors
+        )
+        return ResponseEntity.badRequest().body(response)
+    }
+
+    // ====================================================================
+    // 3c. NOT THE RESOURCE OWNER
+    // ====================================================================
+    // Acting on another user's resource (e.g. deleting their experience)
+    // -> HTTP 403.
+
+    @ExceptionHandler(ForbiddenException::class)
+    fun handleForbidden(ex: ForbiddenException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.FORBIDDEN.value(),
+            error = "Forbidden",
+            message = ex.message ?: "You don't have permission to do this",
+            path = getPath(request)
+        )
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response)
+    }
+
+    // ====================================================================
     // 4. WRONG LOGIN CREDENTIALS
     // ====================================================================
     // Wrong password during login → HTTP 401. We use a GENERIC message so

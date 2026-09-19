@@ -15,10 +15,14 @@
  */
 package com.smacian.backend.entity
 
+import com.smacian.backend.entity.enums.BloodGroup
 import com.smacian.backend.entity.enums.Gender
+import com.smacian.backend.entity.enums.RelationshipStatus
+import jakarta.persistence.*
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
 import java.time.LocalDate
 import java.time.LocalDateTime
-import jakarta.persistence.*
 
 @Entity
 @Table(
@@ -80,6 +84,30 @@ class User {
 
     @field:Column(name = "cover_photo_url", length = 500)
     var coverPhotoUrl: String? = null
+
+    // ==================== Extended Profile Details ====================
+
+    @field:Column(name = "designation", length = 100)
+    var designation: String? = null
+
+    @field:Column(name = "bio", length = 500)
+    var bio: String? = null
+
+    @field:Column(name = "location", length = 255)
+    var location: String? = null
+
+    @field:Enumerated(EnumType.STRING)
+    @field:Column(name = "blood_group", length = 16)
+    var bloodGroup: BloodGroup? = null
+
+    @field:Enumerated(EnumType.STRING)
+    @field:Column(name = "relationship_status", length = 32)
+    var relationshipStatus: RelationshipStatus? = null
+
+    // Social links stored as JSONB in PostgreSQL (each a valid URL).
+    @field:JdbcTypeCode(SqlTypes.JSON)
+    @field:Column(name = "social_links", columnDefinition = "jsonb")
+    var socialLinks: List<String>? = null
 
     // ==================== Account Status ====================
 
