@@ -120,17 +120,6 @@ object ProfileValidation {
             }
         }
 
-        // ---- Photos (only validated, never required - absent keeps current) ----
-        val photo = request.profilePhotoUrl?.trim()?.takeIf { it.isNotBlank() }
-        if (photo != null && !isValidUrl(photo)) {
-            errors["profilePhotoUrl"] = "Profile picture URL must be a valid http(s) URL"
-        }
-
-        val cover = request.coverPhotoUrl?.trim()?.takeIf { it.isNotBlank() }
-        if (cover != null && !isValidUrl(cover)) {
-            errors["coverPhotoUrl"] = "Cover picture URL must be a valid http(s) URL"
-        }
-
         // ---- Timeline entries ----
         request.experiences.orEmpty().forEach { validateExperience(it, errors) }
         request.educations.orEmpty().forEach { validateEducation(it, errors) }

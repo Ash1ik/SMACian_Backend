@@ -117,8 +117,6 @@ social discovery (people search, viewing other users' public profiles).
      "bloodGroup": "A+",
      "relationshipStatus": "Single",
      "socialLinks": ["https://linkedin.com/in/ahmed"],
-     "profilePhotoUrl": "https://res.cloudinary.com/.../avatar.jpg",
-     "coverPhotoUrl": "https://res.cloudinary.com/.../cover.jpg",
      "experiences": [
        {
          "id": null,
@@ -145,10 +143,6 @@ social discovery (people search, viewing other users' public profiles).
    - bloodGroup: one of `A+ A- B+ B- AB+ AB- O+ O-`; relationshipStatus:
      `Single | In a relationship | Engaged | Married`.
    - socialLinks: max 10, each a valid `http(s)://` URL.
-   - profilePhotoUrl / coverPhotoUrl: optional `http(s)://` URLs. These are
-     "set-only-if-provided": sending a value REPLACES the photo; omitting the
-     field (or sending null/blank) KEEPS the current photo. They never clear
-     an existing picture on a sparse save.
    - experience: organization/designation required 2-100; startDate/endDate
      `"MMM yyyy"` (e.g. `"Jan 2025"`, capital month, English); endDate may be
      the literal `"Present"`; endDate cannot be before startDate.

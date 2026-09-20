@@ -27,8 +27,6 @@ data class UpdateProfileRequestExtended(
     val socialLinks: List<String>? = null,
     val bloodGroup: String? = null,
     val relationshipStatus: String? = null,
-    val profilePhotoUrl: String? = null,
-    val coverPhotoUrl: String? = null,
     val experiences: List<UserExperienceRequest>? = emptyList(),
     val educations: List<UserEducationRequest>? = emptyList()
 )
