@@ -220,7 +220,10 @@ object ProfileValidation {
         return tld.length >= 2 && tld.all { it.isLetter() }
     }
 
-    private fun isValidUrl(url: String): Boolean = try {
+    private fun isValidUrl(url: String): Boolean = isValidHttpUrl(url)
+
+    // Public so photo/cover URL endpoints can reuse the same check.
+    fun isValidHttpUrl(url: String): Boolean = try {
         val uri = java.net.URI(url)
         (uri.scheme == "http" || uri.scheme == "https") && !uri.host.isNullOrBlank()
     } catch (e: Exception) {
