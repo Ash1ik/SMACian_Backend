@@ -103,6 +103,17 @@ class UserService(
                 ?.filter { it.isNotBlank() }
                 ?.takeIf { it.isNotEmpty() }
 
+            // Photos are "set only if provided": absent/null/blank keeps the
+            // current picture so a sparse save never erases an uploaded photo.
+            request.profilePhotoUrl
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { profilePhotoUrl = it }
+            request.coverPhotoUrl
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { coverPhotoUrl = it }
+
             if (newEmail != null) email = newEmail
             if (newPhone != null) phone = newPhone
         }
