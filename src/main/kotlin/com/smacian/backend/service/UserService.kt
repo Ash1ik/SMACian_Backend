@@ -155,48 +155,6 @@ class UserService(
     }
 
     // ====================================================================
-    // 4b. UPDATE PROFILE PHOTO BY URL (no Cloudinary needed)
-    // ====================================================================
-    // The app hands us a ready-made photo URL (already uploaded wherever the
-    // client stores media - S3, Firebase, the device's own CDN). We just
-    // validate it is http(s) and store it. Blank/null url => current photo
-    // is left unchanged (a photo is never wiped unless you say so).
-    @Transactional
-    fun updateProfilePhotoUrl(userId: Long, url: String?): UserResponse {
-
-        val user = getUserById(userId)
-
-        val trimmed = url?.trim()
-        if (!trimmed.isNullOrBlank()) {
-            if (!ProfileValidation.isValidHttpUrl(trimmed)) {
-                throw BadRequestException("Photo URL must be a valid http(s) URL")
-            }
-            user.profilePhotoUrl = trimmed
-        }
-
-        return buildUserResponse(userRepository.save(user))
-    }
-
-    // ====================================================================
-    // 4c. UPDATE COVER PHOTO BY URL (no Cloudinary needed)
-    // ====================================================================
-    @Transactional
-    fun updateCoverPhotoUrl(userId: Long, url: String?): UserResponse {
-
-        val user = getUserById(userId)
-
-        val trimmed = url?.trim()
-        if (!trimmed.isNullOrBlank()) {
-            if (!ProfileValidation.isValidHttpUrl(trimmed)) {
-                throw BadRequestException("Cover photo URL must be a valid http(s) URL")
-            }
-            user.coverPhotoUrl = trimmed
-        }
-
-        return buildUserResponse(userRepository.save(user))
-    }
-
-    // ====================================================================
     // 5. GET PUBLIC PROFILE (another user) - email/phone hidden
     // ====================================================================
     @Transactional(readOnly = true)

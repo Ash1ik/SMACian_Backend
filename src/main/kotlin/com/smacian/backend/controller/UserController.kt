@@ -17,7 +17,6 @@
  */
 package com.smacian.backend.controller
 
-import com.smacian.backend.dto.request.UpdatePhotoUrlRequest
 import com.smacian.backend.dto.request.UpdateProfileRequestExtended
 import com.smacian.backend.dto.response.UserResponse
 import com.smacian.backend.security.CurrentUser
@@ -84,30 +83,6 @@ class UserController(
     @PostMapping(value = ["/profile/photo"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun updateProfilePhoto(@RequestPart("file") file: MultipartFile): ResponseEntity<UserResponse> {
         val updated = userService.updateProfilePhoto(CurrentUser.getUserId(), file)
-        return ResponseEntity.ok(updated)
-    }
-
-    // ====================================================================
-    // 3b. SET PROFILE PHOTO BY URL (no Cloudinary needed)
-    // ====================================================================
-    // JSON body:  { "url": "https://..." }   (blank/omitted => keep current)
-    //   curl -X PUT http://localhost:8080/api/user/profile/photo \
-    //        -H "Authorization: Bearer <token>" \
-    //        -H "Content-Type: application/json" \
-    //        -d '{"url":"https://cdn.example.com/me.jpg"}'
-    // ====================================================================
-    @PutMapping("/profile/photo")
-    fun updateProfilePhotoUrl(@Valid @RequestBody request: UpdatePhotoUrlRequest): ResponseEntity<UserResponse> {
-        val updated = userService.updateProfilePhotoUrl(CurrentUser.getUserId(), request.url)
-        return ResponseEntity.ok(updated)
-    }
-
-    // ====================================================================
-    // 3c. SET COVER PHOTO BY URL (no Cloudinary needed)
-    // ====================================================================
-    @PutMapping("/cover/photo")
-    fun updateCoverPhotoUrl(@Valid @RequestBody request: UpdatePhotoUrlRequest): ResponseEntity<UserResponse> {
-        val updated = userService.updateCoverPhotoUrl(CurrentUser.getUserId(), request.url)
         return ResponseEntity.ok(updated)
     }
 
