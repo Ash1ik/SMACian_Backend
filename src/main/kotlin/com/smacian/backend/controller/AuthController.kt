@@ -21,6 +21,7 @@ import com.smacian.backend.dto.request.OtpVerifyRequest
 import com.smacian.backend.dto.request.RegisterRequest
 import com.smacian.backend.dto.request.ResetPasswordRequest
 import com.smacian.backend.dto.response.AuthResponse
+import com.smacian.backend.dto.response.LoginResponse
 import com.smacian.backend.dto.response.MessageResponse
 import com.smacian.backend.entity.enums.OtpPurpose
 import com.smacian.backend.service.AuthService
@@ -58,7 +59,7 @@ class AuthController(
     // ====================================================================
 
     @PostMapping("/login")
-    fun login(@Valid @RequestBody request: LoginRequest): ResponseEntity<AuthResponse> =
+    fun login(@Valid @RequestBody request: LoginRequest): ResponseEntity<LoginResponse> =
         ResponseEntity.ok(authService.login(request))
 
     // ====================================================================

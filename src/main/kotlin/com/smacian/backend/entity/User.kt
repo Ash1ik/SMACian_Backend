@@ -85,6 +85,27 @@ class User {
     @field:Column(name = "cover_photo_url", length = 500)
     var coverPhotoUrl: String? = null
 
+    // ==================== Local Photo Storage ====================
+    // Multipart uploads are stored right here in Postgres (BYTEA) so the
+    // photo feature needs ZERO external services. The GET endpoints stream
+    // these back:
+    //   GET /api/user/profile/photo/{userId}
+    //   GET /api/user/cover/photo/{userId}
+    // profilePhotoUrl / coverPhotoUrl above simply point at those endpoints.
+    @field:Lob
+    @field:Column(name = "profile_photo_data")
+    var profilePhotoData: ByteArray? = null
+
+    @field:Column(name = "profile_photo_content_type", length = 100)
+    var profilePhotoContentType: String? = null
+
+    @field:Lob
+    @field:Column(name = "cover_photo_data")
+    var coverPhotoData: ByteArray? = null
+
+    @field:Column(name = "cover_photo_content_type", length = 100)
+    var coverPhotoContentType: String? = null
+
     // ==================== Extended Profile Details ====================
 
     @field:Column(name = "designation", length = 100)

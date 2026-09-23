@@ -22,6 +22,8 @@ import com.smacian.backend.dto.response.UserResponse
 import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.UserService
 import jakarta.validation.Valid
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -87,6 +89,22 @@ class UserController(
     }
 
     // ====================================================================
+    // 3b. STREAM PROFILE PHOTO (public - mobile <Image> sends no JWT)
+    // ====================================================================
+    // profilePhotoUrl the upload endpoint stores points HERE. This is
+    // permitAll() in SecurityConfig because the mobile app's <Image> tag
+    // loads it without any Authorization header. We return the raw BYTEA
+    // bytes with the stored content type so React Native renders it.
+    @GetMapping("/profile/photo/{userId}")
+    fun streamProfilePhoto(@PathVariable userId: Long): ResponseEntity<ByteArray> {
+        val (data, contentType) = userService.getProfilePhotoStream(userId)
+        return ResponseEntity.status(HttpStatus.OK)
+            .contentType(MediaType.parseMediaType(contentType))
+            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+            .body(data)
+    }
+
+    // ====================================================================
     // 4. DELETE MY EXPERIENCE ENTRY
     // ====================================================================
     // 404 if the entry doesn't exist, 403 if it belongs to another user.
@@ -114,5 +132,20 @@ class UserController(
     fun updateCoverPhoto(@RequestPart("file") file: MultipartFile): ResponseEntity<UserResponse> {
         val updated = userService.updateCoverPhoto(CurrentUser.getUserId(), file)
         return ResponseEntity.ok(updated)
+    }
+
+    // ====================================================================
+    // 8. STREAM COVER PHOTO (public - mobile <Image> sends no JWT)
+    // ====================================================================
+    // Mirror of streamProfilePhoto. coverPhotoUrl the upload endpoint
+    // stores points HERE (permitAll in SecurityConfig - mobile <Image> src
+    // has no Authorization header). Returns raw BYTEA + stored content type.
+    @GetMapping("/cover/photo/{userId}")
+    fun streamCoverPhoto(@PathVariable userId: Long): ResponseEntity<ByteArray> {
+        val (data, contentType) = userService.getCoverPhotoStream(userId)
+        return ResponseEntity.status(HttpStatus.OK)
+            .contentType(MediaType.parseMediaType(contentType))
+            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+            .body(data)
     }
 }

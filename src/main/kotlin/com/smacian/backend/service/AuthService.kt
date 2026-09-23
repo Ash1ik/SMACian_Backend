@@ -18,6 +18,7 @@ import com.smacian.backend.dto.request.LoginRequest
 import com.smacian.backend.dto.request.RegisterRequest
 import com.smacian.backend.dto.request.ResetPasswordRequest
 import com.smacian.backend.dto.response.AuthResponse
+import com.smacian.backend.dto.response.LoginResponse
 import com.smacian.backend.dto.response.UserResponse
 import com.smacian.backend.entity.User
 import com.smacian.backend.entity.enums.OtpPurpose
@@ -116,7 +117,7 @@ class AuthService(
      * or phones are registered.
      */
     @Transactional(readOnly = true)
-    fun login(request: LoginRequest): AuthResponse {
+    fun login(request: LoginRequest): LoginResponse {
 
         val contact = ContactUtils.normalize(request.contact) ?: ""
         ContactUtils.validateContact(contact)
@@ -133,7 +134,7 @@ class AuthService(
 
         // Success → generate the JWT token.
         val token = jwtService.generateToken(user)
-        return AuthResponse(token = token, user = UserResponse.fromEntity(user))
+        return LoginResponse(token = token)
     }
 
     // ====================================================================

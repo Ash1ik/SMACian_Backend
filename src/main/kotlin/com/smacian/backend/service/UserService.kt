@@ -44,14 +44,14 @@ import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 import java.time.LocalDate
 
 @Service
 class UserService(
     private val userRepository: UserRepository,
     private val experienceRepository: UserExperienceRepository,
-    private val educationRepository: UserEducationRepository,
-    private val cloudinaryService: CloudinaryService
+    private val educationRepository: UserEducationRepository
 ) {
 
     // ====================================================================
@@ -121,6 +121,9 @@ class UserService(
     // ====================================================================
     // 3. UPDATE PROFILE PHOTO (avatar)
     // ====================================================================
+    // The upload is stored in the LOCAL PostgreSQL database (no Cloudinary,
+    // no external service). The returned UserResponse.profilePhotoUrl points
+    // at our own streaming endpoint so the mobile <Image> can load it.
     @Transactional
     fun updateProfilePhoto(userId: Long, file: MultipartFile): UserResponse {
 
@@ -130,9 +133,12 @@ class UserService(
             throw BadRequestException("No photo was uploaded. Please select an image")
         }
 
-        val photoUrl = cloudinaryService.uploadImage(file, userId, "avatars")
+        // Validate content type + size before storing.
+        validateImageFile(file)
 
-        user.profilePhotoUrl = photoUrl
+        user.profilePhotoData = file.bytes
+        user.profilePhotoContentType = file.contentType
+        user.profilePhotoUrl = photoStreamUrl(userId, "profile")
         return buildUserResponse(userRepository.save(user))
     }
 
@@ -148,10 +154,71 @@ class UserService(
             throw BadRequestException("No photo was uploaded. Please select an image")
         }
 
-        val coverUrl = cloudinaryService.uploadImage(file, userId, "covers")
+        validateImageFile(file)
 
-        user.coverPhotoUrl = coverUrl
+        user.coverPhotoData = file.bytes
+        user.coverPhotoContentType = file.contentType
+        user.coverPhotoUrl = photoStreamUrl(userId, "cover")
         return buildUserResponse(userRepository.save(user))
+    }
+
+    // ====================================================================
+    // Helpers: photo validation + absolute stream URL
+    // ====================================================================
+
+    private fun validateImageFile(file: MultipartFile) {
+        val allowed = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
+        val type = file.contentType
+        if (type == null || type !in allowed) {
+            throw BadRequestException("Only JPG, PNG, WEBP or GIF images are allowed")
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            throw BadRequestException("Image size must be less than 5MB")
+        }
+    }
+
+    // Builds an absolute URL streamed by our own controller. forward-headers
+    // strategy turns Render's X-Forwarded-* into the real https host.
+    private fun photoStreamUrl(userId: Long, which: String): String =
+        ServletUriComponentsBuilder.fromCurrentContextPath()
+            .path("/api/user/$which/photo/{userId}")
+            .buildAndExpand(userId)
+            .toUriString()
+
+    // ====================================================================
+    // PHOTO STREAM GETTERS (return bytes + content type, or 404)
+    // ====================================================================
+    // The controller streams these back so the mobile <Image> can render
+    // the photo. If no photo has been uploaded yet the stream URL never gets
+    // into the DB, but we still guard against a stale/hand-crafted URL.
+    @Transactional(readOnly = true)
+    fun getProfilePhotoStream(userId: Long): Pair<ByteArray, String> {
+
+        val user = getUserById(userId)
+
+        val data = user.profilePhotoData
+        val contentType = user.profilePhotoContentType
+
+        if (data == null || contentType == null) {
+            throw ResourceNotFoundException("Profile photo not found")
+        }
+
+        return data to contentType
+    }
+
+    @Transactional(readOnly = true)
+    fun getCoverPhotoStream(userId: Long): Pair<ByteArray, String> {
+
+        val user = getUserById(userId)
+
+        val data = user.coverPhotoData
+        val contentType = user.coverPhotoContentType
+
+        if (data == null || contentType == null) {
+            throw ResourceNotFoundException("Cover photo not found")
+        }
+
+        return data to contentType
     }
 
     // ====================================================================

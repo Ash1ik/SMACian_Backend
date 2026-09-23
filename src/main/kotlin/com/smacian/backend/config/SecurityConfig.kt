@@ -63,6 +63,13 @@ class SecurityConfig(
                     .requestMatchers("/api/terms", "/api/privacy").permitAll()
                     .requestMatchers("/uploads/**").permitAll()
 
+                    // Photo BYTEA streams - the mobile <Image> component loads
+                    // these WITHOUT a JWT header, so they must be public. Only
+                    // these two exact GET paths are opened; everything else
+                    // under /api/user stays authenticated.
+                    .requestMatchers(HttpMethod.GET, "/api/user/profile/photo/**").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/user/cover/photo/**").permitAll()
+
                     // PUBLIC API documentation (Swagger UI + OpenAPI json)
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
