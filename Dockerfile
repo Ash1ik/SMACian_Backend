@@ -45,4 +45,7 @@ COPY --from=build /home/app/build/libs/*.jar app.jar
 EXPOSE 8080
 
 # Start the Spring Boot application.
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# -Xmx384m caps the JVM heap so the app fits in small free-tier
+# containers (Koyeb/Render free = 512 MB RAM). PORT is injected
+# by the host and picked up via server.port=${PORT:8080}.
+ENTRYPOINT ["java", "-Xms128m", "-Xmx384m", "-jar", "app.jar"]
