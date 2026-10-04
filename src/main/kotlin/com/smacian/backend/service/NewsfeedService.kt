@@ -173,15 +173,13 @@ class NewsfeedService(
     //              the post must still have >= 1 image then).
     //   images     null -> keep images; non-null -> REPLACE the whole set
     //              (validate count + type + size, store in upload order).
-    //   clearImages true -> delete all images (content must stay non-blank).
     // updatedAt bumps automatically via @PreUpdate.
     @Transactional
     fun updatePost(
         requesterId: Long,
         postId: Long,
         content: String?,
-        images: List<MultipartFile>?,
-        clearImages: Boolean
+        images: List<MultipartFile>?
     ): PostResponse {
 
         val post = getPostById(postId)
@@ -196,9 +194,7 @@ class NewsfeedService(
 
         // ---- images ----
         val files = images?.filter { !it.isEmpty }  // null = part absent -> keep
-        if (clearImages) {
-            postImageRepository.deleteByPostId(postId)
-        } else if (files != null) {
+        if (files != null) {
             if (files.size > MAX_IMAGES_PER_POST) {
                 throw BadRequestException("A post can have at most $MAX_IMAGES_PER_POST images")
             }

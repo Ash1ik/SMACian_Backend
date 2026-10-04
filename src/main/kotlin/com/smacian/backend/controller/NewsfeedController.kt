@@ -111,21 +111,20 @@ class NewsfeedController(
     // ====================================================================
     // 3b. UPDATE POST (author only) - text and/or image set
     // ====================================================================
-    // Multipart, same parts as create plus an optional clearImages flag:
+    // Multipart, same parts as create:
     //   curl -X PUT http://localhost:8080/api/feed/7 \
     //        -H "Authorization: Bearer <token>" \
     //        -F "content=Edited text" \
     //        -F "images=@newphoto.jpg"
-    // Omit a part to keep it; clearImages=true deletes all images.
+    // Omit a part to keep it (omit images = keep existing photos).
     // ====================================================================
     @PutMapping(value = ["/{id}"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun updatePost(
         @PathVariable id: Long,
         @RequestParam(required = false) content: String?,
-        @RequestPart(required = false) images: List<MultipartFile>?,
-        @RequestParam(required = false, defaultValue = "false") clearImages: Boolean
+        @RequestPart(required = false) images: List<MultipartFile>?
     ): ResponseEntity<PostResponse> {
-        val post = newsfeedService.updatePost(CurrentUser.getUserId(), id, content, images, clearImages)
+        val post = newsfeedService.updatePost(CurrentUser.getUserId(), id, content, images)
         return ResponseEntity.ok(post)
     }
 
