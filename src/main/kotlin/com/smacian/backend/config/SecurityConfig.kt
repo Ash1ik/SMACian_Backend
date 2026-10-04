@@ -69,6 +69,9 @@ class SecurityConfig(
                     // under /api/user stays authenticated.
                     .requestMatchers(HttpMethod.GET, "/api/user/profile/photo/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/user/cover/photo/**").permitAll()
+                    // Newsfeed post images - same deal: mobile <Image> loads
+                    // GET /api/feed/images/{id} without a JWT header.
+                    .requestMatchers(HttpMethod.GET, "/api/feed/images/**").permitAll()
 
                     // PUBLIC API documentation (Swagger UI + OpenAPI json)
                     .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
