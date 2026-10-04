@@ -14,14 +14,20 @@
  */
 package com.smacian.backend.service
 
+import com.smacian.backend.dto.response.CommentResponse
+import com.smacian.backend.dto.response.LikeResponse
 import com.smacian.backend.dto.response.PagedResponse
 import com.smacian.backend.dto.response.PostResponse
+import com.smacian.backend.entity.Comment
 import com.smacian.backend.entity.Post
 import com.smacian.backend.entity.PostImage
+import com.smacian.backend.entity.PostLike
 import com.smacian.backend.exception.BadRequestException
 import com.smacian.backend.exception.ForbiddenException
 import com.smacian.backend.exception.ResourceNotFoundException
+import com.smacian.backend.repository.CommentRepository
 import com.smacian.backend.repository.PostImageRepository
+import com.smacian.backend.repository.PostLikeRepository
 import com.smacian.backend.repository.PostRepository
 import com.smacian.backend.repository.UserRepository
 import org.springframework.data.domain.PageRequest
@@ -35,6 +41,8 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 class NewsfeedService(
     private val postRepository: PostRepository,
     private val postImageRepository: PostImageRepository,
+    private val postLikeRepository: PostLikeRepository,
+    private val commentRepository: CommentRepository,
     private val userRepository: UserRepository
 ) {
 
@@ -42,6 +50,7 @@ class NewsfeedService(
         const val MAX_IMAGES_PER_POST = 5
         const val MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
         const val MAX_CONTENT_LENGTH = 5000
+        const val MAX_COMMENT_LENGTH = 2000
         private val ALLOWED_IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
     }
 
@@ -89,14 +98,14 @@ class NewsfeedService(
         }
 
         val imageUrls = imageUrlsFor(savedPost.id!!)
-        return PostResponse.fromEntity(savedPost, imageUrls)
+        return toPostResponse(savedPost, authorId)
     }
 
     // ====================================================================
     // 2. NEWSFEED (paged, newest first)
     // ====================================================================
     @Transactional(readOnly = true)
-    fun getFeed(page: Int, size: Int): PagedResponse<PostResponse> {
+    fun getFeed(viewerId: Long, page: Int, size: Int): PagedResponse<PostResponse> {
 
         val safePage = page.coerceAtLeast(0)
         val safeSize = size.coerceIn(1, 50)
@@ -104,9 +113,7 @@ class NewsfeedService(
         val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
         val result = postRepository.findAllByOrderByCreatedAtDesc(pageable)
 
-        val content = result.content.map { post ->
-            PostResponse.fromEntity(post, imageUrlsFor(post.id!!))
-        }
+        val content = result.content.map { post -> toPostResponse(post, viewerId) }
 
         return PagedResponse(
             content = content,
@@ -129,9 +136,7 @@ class NewsfeedService(
         val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
         val result = postRepository.findByAuthorIdOrderByCreatedAtDesc(authorId, pageable)
 
-        val content = result.content.map { post ->
-            PostResponse.fromEntity(post, imageUrlsFor(post.id!!))
-        }
+        val content = result.content.map { post -> toPostResponse(post, authorId) }
 
         return PagedResponse(
             content = content,
@@ -146,9 +151,9 @@ class NewsfeedService(
     // 3. SINGLE POST
     // ====================================================================
     @Transactional(readOnly = true)
-    fun getPost(postId: Long): PostResponse {
+    fun getPost(postId: Long, viewerId: Long): PostResponse {
         val post = getPostById(postId)
-        return PostResponse.fromEntity(post, imageUrlsFor(post.id!!))
+        return toPostResponse(post, viewerId)
     }
 
     // ====================================================================
@@ -192,6 +197,19 @@ class NewsfeedService(
     // Helpers
     // ====================================================================
 
+    // Builds the full PostResponse for one post as seen by viewerId
+    // (counts + whether the viewer liked it + absolute image URLs).
+    private fun toPostResponse(post: Post, viewerId: Long): PostResponse {
+        val postId = post.id!!
+        return PostResponse.fromEntity(
+            entity = post,
+            imageUrls = imageUrlsFor(postId),
+            likeCount = postLikeRepository.countByPostId(postId),
+            commentCount = commentRepository.countByPostId(postId),
+            likedByMe = postLikeRepository.existsByPostIdAndUserId(postId, viewerId)
+        )
+    }
+
     private fun getPostById(postId: Long): Post =
         postRepository.findById(postId)
             .orElseThrow { ResourceNotFoundException("Post not found") }
@@ -216,5 +234,143 @@ class NewsfeedService(
                 .buildAndExpand(image.id!!)
                 .toUriString()
         }
+    }
+
+    // ====================================================================
+    // 6. LIKE a post (idempotent - liking twice stays liked)
+    // ====================================================================
+    @Transactional
+    fun likePost(userId: Long, postId: Long): LikeResponse {
+
+        val post = getPostById(postId)
+
+        if (!postLikeRepository.existsByPostIdAndUserId(postId, userId)) {
+            val user = userRepository.findById(userId)
+                .orElseThrow { ResourceNotFoundException("User not found") }
+            val like = PostLike().apply {
+                this.post = post
+                this.user = user
+            }
+            postLikeRepository.save(like)
+        }
+
+        return LikeResponse(
+            postId = postId,
+            liked = true,
+            likeCount = postLikeRepository.countByPostId(postId)
+        )
+    }
+
+    // ====================================================================
+    // 7. UNLIKE a post (idempotent - unliking twice stays unliked)
+    // ====================================================================
+    @Transactional
+    fun unlikePost(userId: Long, postId: Long): LikeResponse {
+
+        // 404 first so unliking a missing post doesn't silently succeed.
+        getPostById(postId)
+        postLikeRepository.deleteByPostIdAndUserId(postId, userId)
+
+        return LikeResponse(
+            postId = postId,
+            liked = false,
+            likeCount = postLikeRepository.countByPostId(postId)
+        )
+    }
+
+    // ====================================================================
+    // 8. SHARE a post (increments the share counter)
+    // ====================================================================
+    // A "share" here = the user forwarded the post (to chat, story, etc.).
+    // We count it; the app does the actual forwarding UI-side.
+    @Transactional
+    fun sharePost(userId: Long, postId: Long): PostResponse {
+
+        // Both must exist - no sharing ghost posts, no sharing as a ghost.
+        getPostById(postId)
+        if (!userRepository.existsById(userId)) {
+            throw ResourceNotFoundException("User not found")
+        }
+
+        val post = getPostById(postId)
+        post.shareCount = post.shareCount + 1
+
+        return toPostResponse(postRepository.save(post), userId)
+    }
+
+    // ====================================================================
+    // 9. ADD COMMENT or REPLY (parentId = null -> top-level comment)
+    // ====================================================================
+    @Transactional
+    fun addComment(authorId: Long, postId: Long, content: String?, parentId: Long?): CommentResponse {
+
+        val cleanContent = content?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw BadRequestException("Comment text is required")
+
+        if (cleanContent.length > MAX_COMMENT_LENGTH) {
+            throw BadRequestException("Comment must be $MAX_COMMENT_LENGTH characters or less")
+        }
+
+        val post = getPostById(postId)
+        val author = userRepository.findById(authorId)
+            .orElseThrow { ResourceNotFoundException("User not found") }
+
+        // A reply must answer a comment on the SAME post.
+        val parent = parentId?.let { pid ->
+            val parentComment = commentRepository.findById(pid)
+                .orElseThrow { ResourceNotFoundException("Parent comment not found") }
+            if (parentComment.post!!.id != postId) {
+                throw BadRequestException("Parent comment belongs to a different post")
+            }
+            parentComment
+        }
+
+        val comment = Comment().apply {
+            this.post = post
+            this.author = author
+            this.parent = parent
+            this.content = cleanContent
+        }
+
+        return CommentResponse.fromEntity(commentRepository.save(comment))
+    }
+
+    // ====================================================================
+    // 10. COMMENTS for a post (nested tree, oldest first)
+    // ====================================================================
+    @Transactional(readOnly = true)
+    fun getComments(postId: Long): List<CommentResponse> {
+
+        // 404 for ghost posts instead of an empty list.
+        getPostById(postId)
+
+        val all = commentRepository.findByPostIdOrderByCreatedAtAsc(postId)
+
+        // Group replies under their parent id, then build the tree
+        // recursively (replies nest to any depth).
+        val byParentId: Map<Long?, List<Comment>> = all.groupBy { it.parent?.id }
+
+        fun buildTree(parentId: Long?): List<CommentResponse> =
+            (byParentId[parentId] ?: emptyList()).map { comment ->
+                CommentResponse.fromEntity(comment, buildTree(comment.id))
+            }
+
+        return buildTree(null)
+    }
+
+    // ====================================================================
+    // 11. DELETE COMMENT (author only; the whole reply subtree goes too)
+    // ====================================================================
+    @Transactional
+    fun deleteComment(requesterId: Long, commentId: Long) {
+
+        val comment = commentRepository.findById(commentId)
+            .orElseThrow { ResourceNotFoundException("Comment not found") }
+
+        if (comment.author!!.id != requesterId) {
+            throw ForbiddenException("You can only delete your own comments")
+        }
+
+        commentRepository.delete(comment)
     }
 }

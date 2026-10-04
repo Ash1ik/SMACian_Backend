@@ -3,8 +3,15 @@
  *
  *   POST   /api/feed                  -> create post (multipart: content + images[])
  *   GET    /api/feed?page=0&size=20    -> paged feed, newest first
+ *   GET    /api/feed/mine?page=0&size -> my own posts
  *   GET    /api/feed/{id}              -> single post
  *   DELETE /api/feed/{id}              -> delete own post
+ *   POST   /api/feed/{id}/like         -> like (idempotent)
+ *   DELETE /api/feed/{id}/like         -> unlike (idempotent)
+ *   POST   /api/feed/{id}/share        -> share (bumps shareCount)
+ *   GET    /api/feed/{id}/comments     -> nested comment tree
+ *   POST   /api/feed/{id}/comments     -> comment or reply (parentId)
+ *   DELETE /api/feed/comments/{cid}    -> delete own comment (+replies)
  *   GET    /api/feed/images/{imageId}  -> stream one post image (PUBLIC)
  *
  * All endpoints need login (JWT) EXCEPT the image stream: the mobile
@@ -17,10 +24,14 @@
  */
 package com.smacian.backend.controller
 
+import com.smacian.backend.dto.request.CommentRequest
+import com.smacian.backend.dto.response.CommentResponse
+import com.smacian.backend.dto.response.LikeResponse
 import com.smacian.backend.dto.response.PagedResponse
 import com.smacian.backend.dto.response.PostResponse
 import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.NewsfeedService
+import jakarta.validation.Valid
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -29,6 +40,7 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestPart
@@ -70,7 +82,7 @@ class NewsfeedController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): PagedResponse<PostResponse> =
-        newsfeedService.getFeed(page, size)
+        newsfeedService.getFeed(CurrentUser.getUserId(), page, size)
 
     // ====================================================================
     // 2b. MY POSTS (paged, newest first) - GET /api/feed/mine?page=0&size=20
@@ -91,7 +103,7 @@ class NewsfeedController(
 
     @GetMapping("/{id}")
     fun getPost(@PathVariable id: Long): ResponseEntity<PostResponse> {
-        val post = newsfeedService.getPost(id)
+        val post = newsfeedService.getPost(id, CurrentUser.getUserId())
         return ResponseEntity.ok(post)
     }
 
@@ -102,6 +114,74 @@ class NewsfeedController(
     @DeleteMapping("/{id}")
     fun deletePost(@PathVariable id: Long): ResponseEntity<Void> {
         newsfeedService.deletePost(CurrentUser.getUserId(), id)
+        return ResponseEntity.noContent().build()
+    }
+
+    // ====================================================================
+    // 5. LIKE a post (idempotent) -> { postId, liked: true, likeCount }
+    // ====================================================================
+
+    @PostMapping("/{id}/like")
+    fun likePost(@PathVariable id: Long): ResponseEntity<LikeResponse> {
+        val result = newsfeedService.likePost(CurrentUser.getUserId(), id)
+        return ResponseEntity.ok(result)
+    }
+
+    // ====================================================================
+    // 6. UNLIKE a post (idempotent) -> { postId, liked: false, likeCount }
+    // ====================================================================
+
+    @DeleteMapping("/{id}/like")
+    fun unlikePost(@PathVariable id: Long): ResponseEntity<LikeResponse> {
+        val result = newsfeedService.unlikePost(CurrentUser.getUserId(), id)
+        return ResponseEntity.ok(result)
+    }
+
+    // ====================================================================
+    // 7. SHARE a post -> returns the post with bumped shareCount
+    // ====================================================================
+    // Counts the share; the app handles the actual forwarding UI
+    // (system share sheet, chat, story...).
+
+    @PostMapping("/{id}/share")
+    fun sharePost(@PathVariable id: Long): ResponseEntity<PostResponse> {
+        val post = newsfeedService.sharePost(CurrentUser.getUserId(), id)
+        return ResponseEntity.ok(post)
+    }
+
+    // ====================================================================
+    // 8. COMMENTS tree - GET /api/feed/{id}/comments
+    // ====================================================================
+    // Top-level comments with nested `replies` (any depth, oldest first).
+
+    @GetMapping("/{id}/comments")
+    fun getComments(@PathVariable id: Long): ResponseEntity<List<CommentResponse>> {
+        val comments = newsfeedService.getComments(id)
+        return ResponseEntity.ok(comments)
+    }
+
+    // ====================================================================
+    // 9. ADD COMMENT or REPLY - body { "content": "...", "parentId": null }
+    // ====================================================================
+    // parentId omitted/null = top-level comment; otherwise a reply to
+    // that comment (must belong to the same post).
+
+    @PostMapping("/{id}/comments")
+    fun addComment(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: CommentRequest
+    ): ResponseEntity<CommentResponse> {
+        val comment = newsfeedService.addComment(CurrentUser.getUserId(), id, request.content, request.parentId)
+        return ResponseEntity.status(HttpStatus.CREATED).body(comment)
+    }
+
+    // ====================================================================
+    // 10. DELETE COMMENT (own only, whole reply subtree goes too)
+    // ====================================================================
+
+    @DeleteMapping("/comments/{commentId}")
+    fun deleteComment(@PathVariable commentId: Long): ResponseEntity<Void> {
+        newsfeedService.deleteComment(CurrentUser.getUserId(), commentId)
         return ResponseEntity.noContent().build()
     }
 
