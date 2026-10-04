@@ -166,6 +166,69 @@ class NewsfeedService(
     }
 
     // ====================================================================
+    // 3b. UPDATE POST (author only)
+    // ====================================================================
+    // Multipart, same parts as create. Semantics per field:
+    //   content    null -> keep text; otherwise replace (blank clears, but
+    //              the post must still have >= 1 image then).
+    //   images     null -> keep images; non-null -> REPLACE the whole set
+    //              (validate count + type + size, store in upload order).
+    //   clearImages true -> delete all images (content must stay non-blank).
+    // updatedAt bumps automatically via @PreUpdate.
+    @Transactional
+    fun updatePost(
+        requesterId: Long,
+        postId: Long,
+        content: String?,
+        images: List<MultipartFile>?,
+        clearImages: Boolean
+    ): PostResponse {
+
+        val post = getPostById(postId)
+
+        if (post.author!!.id != requesterId) {
+            throw ForbiddenException("You can only edit your own posts")
+        }
+
+        // ---- text ----
+        // null = field absent -> keep. Present (even blank) = replace.
+        val newContent = if (content != null) content.trim().takeIf { it.isNotEmpty() } else post.content
+
+        // ---- images ----
+        val files = images?.filter { !it.isEmpty }  // null = part absent -> keep
+        if (clearImages) {
+            postImageRepository.deleteByPostId(postId)
+        } else if (files != null) {
+            if (files.size > MAX_IMAGES_PER_POST) {
+                throw BadRequestException("A post can have at most $MAX_IMAGES_PER_POST images")
+            }
+            files.forEach { validateImageFile(it) }
+            postImageRepository.deleteByPostId(postId)
+            files.forEachIndexed { index, file ->
+                val image = PostImage().apply {
+                    this.post = post
+                    this.imageData = file.bytes
+                    this.contentType = file.contentType
+                    this.sortOrder = index
+                }
+                postImageRepository.save(image)
+            }
+        }
+
+        // ---- invariant: text OR >= 1 image ----
+        val remainingImages = postImageRepository.countByPostId(postId)
+        if (newContent == null && remainingImages == 0L) {
+            throw BadRequestException("Post needs text or at least one image")
+        }
+        if (newContent != null && newContent.length > MAX_CONTENT_LENGTH) {
+            throw BadRequestException("Post text must be $MAX_CONTENT_LENGTH characters or less")
+        }
+
+        post.content = newContent
+        return toPostResponse(postRepository.save(post), requesterId)
+    }
+
+    // ====================================================================
     // 4. DELETE POST (author only)
     // ====================================================================
     // PostImage rows are removed by ON DELETE CASCADE.

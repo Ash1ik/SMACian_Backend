@@ -40,6 +40,7 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -104,6 +105,27 @@ class NewsfeedController(
     @GetMapping("/{id}")
     fun getPost(@PathVariable id: Long): ResponseEntity<PostResponse> {
         val post = newsfeedService.getPost(id, CurrentUser.getUserId())
+        return ResponseEntity.ok(post)
+    }
+
+    // ====================================================================
+    // 3b. UPDATE POST (author only) - text and/or image set
+    // ====================================================================
+    // Multipart, same parts as create plus an optional clearImages flag:
+    //   curl -X PUT http://localhost:8080/api/feed/7 \
+    //        -H "Authorization: Bearer <token>" \
+    //        -F "content=Edited text" \
+    //        -F "images=@newphoto.jpg"
+    // Omit a part to keep it; clearImages=true deletes all images.
+    // ====================================================================
+    @PutMapping(value = ["/{id}"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun updatePost(
+        @PathVariable id: Long,
+        @RequestParam(required = false) content: String?,
+        @RequestPart(required = false) images: List<MultipartFile>?,
+        @RequestParam(required = false, defaultValue = "false") clearImages: Boolean
+    ): ResponseEntity<PostResponse> {
+        val post = newsfeedService.updatePost(CurrentUser.getUserId(), id, content, images, clearImages)
         return ResponseEntity.ok(post)
     }
 

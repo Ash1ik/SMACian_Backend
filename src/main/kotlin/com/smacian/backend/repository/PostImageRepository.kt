@@ -25,4 +25,17 @@ interface PostImageRepository : JpaRepository<PostImage, Long> {
      */
     @Query("SELECT pi.post.id, pi.id FROM PostImage pi WHERE pi.post.id IN :postIds ORDER BY pi.sortOrder ASC")
     fun findImageIdsByPostIds(@Param("postIds") postIds: List<Long>): List<Array<Any>>
+
+    /*
+     * Delete ALL images of a post in ONE statement (no SELECT, no BYTEA).
+     * Used by post edit (replace/clear) and relies on no orphan cleanup
+     * since rows are removed directly. Returns rows deleted.
+     */
+    fun deleteByPostId(postId: Long): Long
+
+    /*
+     * SQL: SELECT COUNT(*) FROM post_images WHERE post_id = ?
+     * Used by post edit to enforce the text-or-image invariant.
+     */
+    fun countByPostId(postId: Long): Long
 }
