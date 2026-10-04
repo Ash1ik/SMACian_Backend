@@ -118,6 +118,31 @@ class NewsfeedService(
     }
 
     // ====================================================================
+    // 2b. MY POSTS (paged, newest first)
+    // ====================================================================
+    @Transactional(readOnly = true)
+    fun getMyPosts(authorId: Long, page: Int, size: Int): PagedResponse<PostResponse> {
+
+        val safePage = page.coerceAtLeast(0)
+        val safeSize = size.coerceIn(1, 50)
+
+        val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+        val result = postRepository.findByAuthorIdOrderByCreatedAtDesc(authorId, pageable)
+
+        val content = result.content.map { post ->
+            PostResponse.fromEntity(post, imageUrlsFor(post.id!!))
+        }
+
+        return PagedResponse(
+            content = content,
+            page = result.number,
+            size = result.size,
+            totalElements = result.totalElements,
+            totalPages = result.totalPages
+        )
+    }
+
+    // ====================================================================
     // 3. SINGLE POST
     // ====================================================================
     @Transactional(readOnly = true)

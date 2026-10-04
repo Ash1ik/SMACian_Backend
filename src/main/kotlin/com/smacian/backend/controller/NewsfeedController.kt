@@ -73,6 +73,19 @@ class NewsfeedController(
         newsfeedService.getFeed(page, size)
 
     // ====================================================================
+    // 2b. MY POSTS (paged, newest first) - GET /api/feed/mine?page=0&size=20
+    // ====================================================================
+    // Declared BEFORE /{id} so "mine" matches this literal route and is
+    // never parsed as a post id. Author comes from the JWT, not the request.
+
+    @GetMapping("/mine")
+    fun getMyPosts(
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "20") size: Int
+    ): PagedResponse<PostResponse> =
+        newsfeedService.getMyPosts(CurrentUser.getUserId(), page, size)
+
+    // ====================================================================
     // 3. SINGLE POST - GET /api/feed/{id}
     // ====================================================================
 
