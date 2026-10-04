@@ -17,6 +17,7 @@ package com.smacian.backend.service
 import com.smacian.backend.dto.response.CommentResponse
 import com.smacian.backend.dto.response.LikeResponse
 import com.smacian.backend.dto.response.PagedResponse
+import com.smacian.backend.dto.response.PostImageResponse
 import com.smacian.backend.dto.response.PostResponse
 import com.smacian.backend.entity.Comment
 import com.smacian.backend.entity.Post
@@ -30,6 +31,7 @@ import com.smacian.backend.repository.PostImageRepository
 import com.smacian.backend.repository.PostLikeRepository
 import com.smacian.backend.repository.PostRepository
 import com.smacian.backend.repository.UserRepository
+import com.smacian.backend.util.ImageProcessing
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
@@ -58,7 +60,10 @@ class NewsfeedService(
 
     companion object {
         const val MAX_IMAGES_PER_POST = 5
-        const val MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+        // Pre-processing ORIGINAL size cap per file (phone-camera JPEGs run
+        // 3-10MB). Must fit spring.servlet.multipart.max-file-size - the
+        // STORED bytes are smaller (downscaled + recompressed, see below).
+        const val MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
         const val MAX_CONTENT_LENGTH = 5000
         const val MAX_COMMENT_LENGTH = 2000
         private val ALLOWED_IMAGE_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
@@ -87,6 +92,10 @@ class NewsfeedService(
 
         files.forEach { validateImageFile(it) }
 
+        // Process SEQUENTIALLY (never parallel): one decoded bitmap at a
+        // time keeps peak heap far below the 384m cap.
+        val processed = files.map { ImageProcessing.process(it) }
+
         val author = userRepository.findById(authorId)
             .orElseThrow { ResourceNotFoundException("User not found") }
 
@@ -96,12 +105,14 @@ class NewsfeedService(
         }
         val savedPost = postRepository.save(post)
 
-        // Store each image row in upload order (0, 1, 2...).
-        files.forEachIndexed { index, file ->
+        // Store each processed image row in upload order (0, 1, 2...).
+        processed.forEachIndexed { index, img ->
             val image = PostImage().apply {
                 this.post = savedPost
-                this.imageData = file.bytes
-                this.contentType = file.contentType
+                this.imageData = img.bytes
+                this.contentType = img.contentType
+                this.width = img.width
+                this.height = img.height
                 this.sortOrder = index
             }
             postImageRepository.save(image)
@@ -199,12 +210,17 @@ class NewsfeedService(
                 throw BadRequestException("A post can have at most $MAX_IMAGES_PER_POST images")
             }
             files.forEach { validateImageFile(it) }
+            // Same pipeline as create: processed sequentially, stored with
+            // dimensions in upload order (replaces the whole set).
+            val processed = files.map { ImageProcessing.process(it) }
             postImageRepository.deleteByPostId(postId)
-            files.forEachIndexed { index, file ->
+            processed.forEachIndexed { index, img ->
                 val image = PostImage().apply {
                     this.post = post
-                    this.imageData = file.bytes
-                    this.contentType = file.contentType
+                    this.imageData = img.bytes
+                    this.contentType = img.contentType
+                    this.width = img.width
+                    this.height = img.height
                     this.sortOrder = index
                 }
                 postImageRepository.save(image)
@@ -267,11 +283,12 @@ class NewsfeedService(
 
     // Builds the full PostResponse for ONE post (single-post endpoints).
     // Authors here are lazy-loaded (1 extra SELECT) - acceptable outside lists.
+    // Image rows come from the METADATA query (no BYTEA).
     private fun toPostResponse(post: Post, viewerId: Long): PostResponse {
         val postId = post.id!!
         return PostResponse.fromEntity(
             entity = post,
-            imageUrls = postImageRepository.findIdsByPostIdOrdered(postId).map { imageStreamUrl(it) },
+            images = postImageRepository.findMetadataByPostIdOrdered(postId).map { toImageResponse(it) },
             likeCount = postLikeRepository.countByPostId(postId),
             commentCount = commentRepository.countByPostId(postId),
             likedByMe = postLikeRepository.existsByPostIdAndUserId(postId, viewerId)
@@ -279,16 +296,21 @@ class NewsfeedService(
     }
 
     // Maps a WHOLE page with 4 extra queries TOTAL (not per post):
-    // 1 image-id pairs, 1 like counts, 1 comment counts, 1 liked ids.
+    // 1 image metadata, 1 like counts, 1 comment counts, 1 liked ids.
     // Authors come JOIN FETCHed - no per-post lazy SELECT. No BYTEA loaded.
     private fun toPostResponseList(posts: List<Post>, viewerId: Long): List<PostResponse> {
         if (posts.isEmpty()) return emptyList()
         val ids = posts.map { it.id!! }
 
-        // (postId, imageId) pairs ordered by sort_order; groupBy preserves
-        // encounter order, so each post's URLs stay in upload order.
-        val imageIdsByPost: Map<Long, List<Long>> = postImageRepository.findImageIdsByPostIds(ids)
-            .groupBy({ (it[0] as Long) }, { (it[1] as Long) })
+        // (postId, id, width, height, sortOrder) ordered by sort_order;
+        // groupBy preserves encounter order, so each post's images stay
+        // in upload order. Still zero BYTEA.
+        val imagesByPost: Map<Long, List<PostImageResponse>> =
+            postImageRepository.findMetadataByPostIds(ids)
+                .groupBy(
+                    { (it[0] as Long) },
+                    { row -> toImageResponse(arrayOf(row[1], row[2], row[3], row[4])) }
+                )
         val likeCounts = postLikeRepository.countByPostIds(ids)
             .associate { (it[0] as Long) to (it[1] as Long) }
         val commentCounts = commentRepository.countByPostIds(ids)
@@ -299,7 +321,7 @@ class NewsfeedService(
             val postId = post.id!!
             PostResponse.fromEntity(
                 entity = post,
-                imageUrls = (imageIdsByPost[postId] ?: emptyList()).map { imageStreamUrl(it) },
+                images = imagesByPost[postId] ?: emptyList(),
                 likeCount = likeCounts[postId] ?: 0L,
                 commentCount = commentCounts[postId] ?: 0L,
                 likedByMe = postId in likedIds
@@ -307,17 +329,32 @@ class NewsfeedService(
         }
     }
 
+    // (id, width, height, sortOrder) metadata row -> DTO. width/height are
+    // nullable (legacy rows, WebP) - the app treats null as "unknown".
+    private fun toImageResponse(row: Array<Any>): PostImageResponse {
+        val id = row[0] as Long
+        return PostImageResponse(
+            id = id,
+            url = imageStreamUrl(id),
+            width = row[1] as Int?,
+            height = row[2] as Int?,
+            sortOrder = row[3] as Int
+        )
+    }
+
     private fun getPostById(postId: Long): Post =
         postRepository.findById(postId)
             .orElseThrow { ResourceNotFoundException("Post not found") }
 
+    // CHEAP pre-checks (allow-list + size) BEFORE the expensive decode in
+    // ImageProcessing.process, which re-verifies via magic bytes + decode.
     private fun validateImageFile(file: MultipartFile) {
         val type = file.contentType
         if (type == null || type !in ALLOWED_IMAGE_TYPES) {
             throw BadRequestException("Only JPG, PNG, WEBP or GIF images are allowed")
         }
         if (file.size > MAX_IMAGE_SIZE_BYTES) {
-            throw BadRequestException("Each image must be less than 5MB")
+            throw BadRequestException("Each image must be less than 10MB")
         }
     }
 

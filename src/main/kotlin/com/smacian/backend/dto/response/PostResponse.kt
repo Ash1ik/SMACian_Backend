@@ -3,14 +3,20 @@
  *
  * JSON: { "id": 7, "content": "Hello world", "authorId": 3,
  *         "authorName": "Ahmed Khan", "authorPhotoUrl": "https://...",
- *         "imageUrls": ["https://.../api/feed/images/11", ...],
+ *         "images": [{ "id": 11, "url": "https://.../api/feed/images/11",
+ *                      "width": 1600, "height": 1200, "sortOrder": 0 }],
  *         "likeCount": 12, "commentCount": 4, "shareCount": 2,
  *         "likedByMe": true,
  *         "createdAt": "2026-10-04T10:15:00", "updatedAt": "..." }
  *
- * imageUrls are absolute URLs served by GET /api/feed/images/{id}
- * (public - the mobile <Image> loads them without a JWT).
+ * images carry id + absolute stream URL + stored dimensions + sortOrder
+ * (pre-sorted) so Android can lay out before downloading bytes. URLs are
+ * served by GET /api/feed/images/{id} (public - mobile <Image> sends no JWT).
  * likedByMe is relative to the requesting user (from their JWT).
+ *
+ * BREAKING (v2, 2026-10): replaces imageUrls: List<String>. No production
+ * Android client existed at change time, so the rename was done cleanly
+ * instead of shipping both fields.
  */
 package com.smacian.backend.dto.response
 
@@ -23,7 +29,7 @@ data class PostResponse(
     val authorId: Long,
     val authorName: String,
     val authorPhotoUrl: String?,
-    val imageUrls: List<String>,
+    val images: List<PostImageResponse>,
     val likeCount: Long,
     val commentCount: Long,
     val shareCount: Int,
@@ -34,7 +40,7 @@ data class PostResponse(
     companion object {
         fun fromEntity(
             entity: Post,
-            imageUrls: List<String>,
+            images: List<PostImageResponse>,
             likeCount: Long,
             commentCount: Long,
             likedByMe: Boolean
@@ -46,7 +52,7 @@ data class PostResponse(
                 authorId = author.id!!,
                 authorName = author.fullName,
                 authorPhotoUrl = author.profilePhotoUrl,
-                imageUrls = imageUrls,
+                images = images,
                 likeCount = likeCount,
                 commentCount = commentCount,
                 shareCount = entity.shareCount,

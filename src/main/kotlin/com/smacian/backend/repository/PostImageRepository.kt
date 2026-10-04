@@ -13,18 +13,25 @@ import org.springframework.stereotype.Repository
 interface PostImageRepository : JpaRepository<PostImage, Long> {
 
     /*
-     * IDs only, no BYTEA - used by feed mapping (only the id feeds the URL).
+     * Full metadata for ONE post, no BYTEA: (id, width, height, sortOrder),
+     * upload order. Used by single-post mapping.
      */
-    @Query("SELECT pi.id FROM PostImage pi WHERE pi.post.id = :postId ORDER BY pi.sortOrder ASC")
-    fun findIdsByPostIdOrdered(@Param("postId") postId: Long): List<Long>
+    @Query(
+        "SELECT pi.id, pi.width, pi.height, pi.sortOrder FROM PostImage pi " +
+        "WHERE pi.post.id = :postId ORDER BY pi.sortOrder ASC"
+    )
+    fun findMetadataByPostIdOrdered(@Param("postId") postId: Long): List<Array<Any>>
 
     /*
-     * (postId, imageId) pairs for a whole page of posts in ONE query.
-     * Ordered by sort_order; the service groups per post preserving order.
-     * No BYTEA loaded.
+     * Metadata for a WHOLE page of posts in ONE query, no BYTEA:
+     * (postId, id, width, height, sortOrder), ordered by sort_order.
+     * The service groups per post preserving upload order.
      */
-    @Query("SELECT pi.post.id, pi.id FROM PostImage pi WHERE pi.post.id IN :postIds ORDER BY pi.sortOrder ASC")
-    fun findImageIdsByPostIds(@Param("postIds") postIds: List<Long>): List<Array<Any>>
+    @Query(
+        "SELECT pi.post.id, pi.id, pi.width, pi.height, pi.sortOrder FROM PostImage pi " +
+        "WHERE pi.post.id IN :postIds ORDER BY pi.sortOrder ASC"
+    )
+    fun findMetadataByPostIds(@Param("postIds") postIds: List<Long>): List<Array<Any>>
 
     /*
      * Delete ALL images of a post in ONE statement (no SELECT, no BYTEA).

@@ -43,6 +43,15 @@ class PostImage {
     @field:Column(name = "content_type", length = 100)
     var contentType: String? = null
 
+    // Stored dimensions AFTER processing (downscaled to fit 1600x1600).
+    // Nullable: pre-existing rows predate this (NULL), and WebP has no JDK
+    // decoder so its dimensions stay unknown. Android uses these for layout.
+    @field:Column(name = "width")
+    var width: Int? = null
+
+    @field:Column(name = "height")
+    var height: Int? = null
+
     // Position of the image inside the post (0, 1, 2...).
     @field:Column(name = "sort_order", nullable = false)
     var sortOrder: Int = 0

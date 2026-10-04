@@ -48,4 +48,6 @@ EXPOSE 8080
 # -Xmx384m caps the JVM heap so the app fits in small free-tier
 # containers (Koyeb/Render free = 512 MB RAM). PORT is injected
 # by the host and picked up via server.port=${PORT:8080}.
-ENTRYPOINT ["java", "-Xms128m", "-Xmx384m", "-jar", "app.jar"]
+# -Djava.awt.headless=true: image downscaling (ImageIO/AWT) needs no
+# display; without it containers without X11 crash on first resize.
+ENTRYPOINT ["java", "-Djava.awt.headless=true", "-Xms128m", "-Xmx384m", "-jar", "app.jar"]

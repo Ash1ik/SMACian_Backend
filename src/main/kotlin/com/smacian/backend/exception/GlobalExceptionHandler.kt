@@ -221,14 +221,14 @@ class GlobalExceptionHandler {
     // ====================================================================
     // 7. FILE TOO LARGE (photo upload)
     // ====================================================================
-    // Uploaded photo exceeds 5MB → HTTP 413.
+    // Uploaded file(s) exceed the multipart caps (10MB/file, 55MB/request).
 
     @ExceptionHandler(MaxUploadSizeExceededException::class)
     fun handleMaxUploadSize(ex: MaxUploadSizeExceededException, request: WebRequest): ResponseEntity<ErrorResponse> {
         val response = ErrorResponse(
             status = HttpStatus.PAYLOAD_TOO_LARGE.value(),
             error = "File Too Large",
-            message = "File size must be less than 5MB",
+            message = "Upload too large. Each image must be less than 10MB",
             path = getPath(request)
         )
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(response)
