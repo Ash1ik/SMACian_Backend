@@ -15,7 +15,12 @@ import java.time.LocalDateTime
 import jakarta.persistence.*
 
 @Entity
-@Table(name = "otp_codes")
+@Table(
+    name = "otp_codes",
+    indexes = [
+        Index(name = "idx_otp_codes_lookup", columnList = "contact,purpose,used,created_at")
+    ]
+)
 class OtpCode {
 
     @Id
@@ -44,6 +49,12 @@ class OtpCode {
     // Once verified successfully, we mark it used so it can't be reused.
     @field:Column(name = "used", nullable = false)
     var used: Boolean = false
+
+    // Wrong-code guesses against THIS otp row. At MAX_ATTEMPTS the row is
+    // dead (request a new code) - bounds the 6-digit brute-force space.
+    // columnDefinition carries the DEFAULT for pre-existing rows.
+    @field:Column(name = "attempts", nullable = false, columnDefinition = "integer default 0")
+    var attempts: Int = 0
 
     @field:Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: LocalDateTime = LocalDateTime.now()

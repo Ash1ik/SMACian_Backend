@@ -15,6 +15,7 @@
 package com.smacian.backend.repository
 
 import com.smacian.backend.entity.User
+import com.smacian.backend.dto.response.PeopleListItemResponse
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
@@ -56,14 +57,26 @@ interface UserRepository : JpaRepository<User, Long> {
     /*
      * People search: case-insensitive ILIKE on full name OR designation.
      * Only active users are returned; sorted by updatedAt desc (via Pageable sort).
+     *
+     * Projection (SELECT NEW ...) fetches ONLY the 5 displayed columns -
+     * profile/cover photo BYTEA blobs are never loaded for list rows.
      */
     @Query(
-        "SELECT u FROM User u " +
+        value = "SELECT NEW com.smacian.backend.dto.response.PeopleListItemResponse(" +
+            "u.id, CONCAT(CONCAT(u.firstName, ' '), u.lastName), " +
+            "u.profilePhotoUrl, u.designation, u.bloodGroup) " +
+            "FROM User u " +
+            "WHERE u.isActive = true AND (" +
+            "  :q = '' " +
+            "  OR lower(concat(u.firstName, ' ', u.lastName)) LIKE lower(concat('%', :q, '%')) " +
+            "  OR lower(coalesce(u.designation, '')) LIKE lower(concat('%', :q, '%'))" +
+            ")",
+        countQuery = "SELECT COUNT(u) FROM User u " +
             "WHERE u.isActive = true AND (" +
             "  :q = '' " +
             "  OR lower(concat(u.firstName, ' ', u.lastName)) LIKE lower(concat('%', :q, '%')) " +
             "  OR lower(coalesce(u.designation, '')) LIKE lower(concat('%', :q, '%'))" +
             ")"
     )
-    fun searchPeople(@Param("q") q: String, pageable: Pageable): Page<User>
+    fun searchPeople(@Param("q") q: String, pageable: Pageable): Page<PeopleListItemResponse>
 }

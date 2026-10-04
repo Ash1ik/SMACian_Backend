@@ -30,10 +30,13 @@ import com.smacian.backend.repository.PostImageRepository
 import com.smacian.backend.repository.PostLikeRepository
 import com.smacian.backend.repository.PostRepository
 import com.smacian.backend.repository.UserRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 
@@ -43,8 +46,15 @@ class NewsfeedService(
     private val postImageRepository: PostImageRepository,
     private val postLikeRepository: PostLikeRepository,
     private val commentRepository: CommentRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    transactionManager: PlatformTransactionManager
 ) {
+
+    // Runs the like INSERT in its own transaction (see likePost): on a lost
+    // race only the inner tx rolls back and the outer one stays usable.
+    private val newTx = TransactionTemplate(transactionManager).apply {
+        propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+    }
 
     companion object {
         const val MAX_IMAGES_PER_POST = 5
@@ -97,7 +107,6 @@ class NewsfeedService(
             postImageRepository.save(image)
         }
 
-        val imageUrls = imageUrlsFor(savedPost.id!!)
         return toPostResponse(savedPost, authorId)
     }
 
@@ -110,10 +119,10 @@ class NewsfeedService(
         val safePage = page.coerceAtLeast(0)
         val safeSize = size.coerceIn(1, 50)
 
-        val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
-        val result = postRepository.findAllByOrderByCreatedAtDesc(pageable)
+        val pageable = PageRequest.of(safePage, safeSize)
+        val result = postRepository.findFeedPage(pageable)
 
-        val content = result.content.map { post -> toPostResponse(post, viewerId) }
+        val content = toPostResponseList(result.content, viewerId)
 
         return PagedResponse(
             content = content,
@@ -133,10 +142,10 @@ class NewsfeedService(
         val safePage = page.coerceAtLeast(0)
         val safeSize = size.coerceIn(1, 50)
 
-        val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
-        val result = postRepository.findByAuthorIdOrderByCreatedAtDesc(authorId, pageable)
+        val pageable = PageRequest.of(safePage, safeSize)
+        val result = postRepository.findMyPostsPage(authorId, pageable)
 
-        val content = result.content.map { post -> toPostResponse(post, authorId) }
+        val content = toPostResponseList(result.content, authorId)
 
         return PagedResponse(
             content = content,
@@ -197,17 +206,46 @@ class NewsfeedService(
     // Helpers
     // ====================================================================
 
-    // Builds the full PostResponse for one post as seen by viewerId
-    // (counts + whether the viewer liked it + absolute image URLs).
+    // Builds the full PostResponse for ONE post (single-post endpoints).
+    // Authors here are lazy-loaded (1 extra SELECT) - acceptable outside lists.
     private fun toPostResponse(post: Post, viewerId: Long): PostResponse {
         val postId = post.id!!
         return PostResponse.fromEntity(
             entity = post,
-            imageUrls = imageUrlsFor(postId),
+            imageUrls = postImageRepository.findIdsByPostIdOrdered(postId).map { imageStreamUrl(it) },
             likeCount = postLikeRepository.countByPostId(postId),
             commentCount = commentRepository.countByPostId(postId),
             likedByMe = postLikeRepository.existsByPostIdAndUserId(postId, viewerId)
         )
+    }
+
+    // Maps a WHOLE page with 4 extra queries TOTAL (not per post):
+    // 1 image-id pairs, 1 like counts, 1 comment counts, 1 liked ids.
+    // Authors come JOIN FETCHed - no per-post lazy SELECT. No BYTEA loaded.
+    private fun toPostResponseList(posts: List<Post>, viewerId: Long): List<PostResponse> {
+        if (posts.isEmpty()) return emptyList()
+        val ids = posts.map { it.id!! }
+
+        // (postId, imageId) pairs ordered by sort_order; groupBy preserves
+        // encounter order, so each post's URLs stay in upload order.
+        val imageIdsByPost: Map<Long, List<Long>> = postImageRepository.findImageIdsByPostIds(ids)
+            .groupBy({ (it[0] as Long) }, { (it[1] as Long) })
+        val likeCounts = postLikeRepository.countByPostIds(ids)
+            .associate { (it[0] as Long) to (it[1] as Long) }
+        val commentCounts = commentRepository.countByPostIds(ids)
+            .associate { (it[0] as Long) to (it[1] as Long) }
+        val likedIds = postLikeRepository.findLikedPostIds(ids, viewerId).toSet()
+
+        return posts.map { post ->
+            val postId = post.id!!
+            PostResponse.fromEntity(
+                entity = post,
+                imageUrls = (imageIdsByPost[postId] ?: emptyList()).map { imageStreamUrl(it) },
+                likeCount = likeCounts[postId] ?: 0L,
+                commentCount = commentCounts[postId] ?: 0L,
+                likedByMe = postId in likedIds
+            )
+        }
     }
 
     private fun getPostById(postId: Long): Post =
@@ -224,17 +262,14 @@ class NewsfeedService(
         }
     }
 
-    // Absolute URLs streamed by our own controller (same pattern as the
+    // Absolute URL streamed by our own controller (same pattern as the
     // profile/cover photoStreamUrl - forward-headers build the public host).
-    private fun imageUrlsFor(postId: Long): List<String> {
-        val images = postImageRepository.findByPostIdOrderBySortOrderAsc(postId)
-        return images.map { image ->
-            ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/api/feed/images/{imageId}")
-                .buildAndExpand(image.id!!)
-                .toUriString()
-        }
-    }
+    // Takes an image ID only, so callers never load BYTEA to build URLs.
+    private fun imageStreamUrl(imageId: Long): String =
+        ServletUriComponentsBuilder.fromCurrentContextPath()
+            .path("/api/feed/images/{imageId}")
+            .buildAndExpand(imageId)
+            .toUriString()
 
     // ====================================================================
     // 6. LIKE a post (idempotent - liking twice stays liked)
@@ -245,19 +280,30 @@ class NewsfeedService(
         val post = getPostById(postId)
 
         if (!postLikeRepository.existsByPostIdAndUserId(postId, userId)) {
-            val user = userRepository.findById(userId)
-                .orElseThrow { ResourceNotFoundException("User not found") }
-            val like = PostLike().apply {
-                this.post = post
-                this.user = user
+            if (!userRepository.existsById(userId)) {
+                throw ResourceNotFoundException("User not found")
             }
-            postLikeRepository.save(like)
+            // Insert in its OWN transaction using ID-only references: on a
+            // lost race (concurrent double-like) only the inner tx rolls
+            // back (Postgres aborts on constraint violation) while the
+            // outer one stays usable - we fall through as "liked".
+            try {
+                newTx.executeWithoutResult {
+                    val like = PostLike().apply {
+                        this.post = postRepository.getReferenceById(postId)
+                        this.user = userRepository.getReferenceById(userId)
+                    }
+                    postLikeRepository.saveAndFlush(like)
+                }
+            } catch (e: DataIntegrityViolationException) {
+                // lost the race - the other request already liked
+            }
         }
 
         return LikeResponse(
-            postId = postId,
+            postId = post.id!!,
             liked = true,
-            likeCount = postLikeRepository.countByPostId(postId)
+            likeCount = postLikeRepository.countByPostId(post.id!!)
         )
     }
 
@@ -286,16 +332,20 @@ class NewsfeedService(
     @Transactional
     fun sharePost(userId: Long, postId: Long): PostResponse {
 
-        // Both must exist - no sharing ghost posts, no sharing as a ghost.
-        getPostById(postId)
         if (!userRepository.existsById(userId)) {
             throw ResourceNotFoundException("User not found")
         }
 
-        val post = getPostById(postId)
-        post.shareCount = post.shareCount + 1
+        // Atomic counter bump - concurrent shares can never lose increments
+        // (no read-modify-write). Returns 0 when the post doesn't exist.
+        val updated = postRepository.incrementShareCount(postId)
+        if (updated == 0) {
+            throw ResourceNotFoundException("Post not found")
+        }
 
-        return toPostResponse(postRepository.save(post), userId)
+        // Fresh read: the post was never loaded above, so no stale L1 entry.
+        val post = getPostById(postId)
+        return toPostResponse(post, userId)
     }
 
     // ====================================================================

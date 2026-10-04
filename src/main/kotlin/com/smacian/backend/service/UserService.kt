@@ -46,6 +46,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 @Service
 class UserService(
@@ -138,8 +139,12 @@ class UserService(
 
         user.profilePhotoData = file.bytes
         user.profilePhotoContentType = file.contentType
-        user.profilePhotoUrl = photoStreamUrl(userId, "profile")
-        return buildUserResponse(userRepository.save(user))
+        // Flush FIRST so @PreUpdate stamps a fresh updatedAt, then version
+        // the URL with it - clients/CDNs see each upload as a new resource
+        // and never render a stale avatar behind the 24h cache header.
+        val saved = userRepository.saveAndFlush(user)
+        saved.profilePhotoUrl = photoStreamUrl(userId, "profile", saved.updatedAt.toEpochSecond(ZoneOffset.UTC))
+        return buildUserResponse(saved)
     }
 
     // ====================================================================
@@ -158,8 +163,10 @@ class UserService(
 
         user.coverPhotoData = file.bytes
         user.coverPhotoContentType = file.contentType
-        user.coverPhotoUrl = photoStreamUrl(userId, "cover")
-        return buildUserResponse(userRepository.save(user))
+        // Same flush-then-version pattern as updateProfilePhoto above.
+        val saved = userRepository.saveAndFlush(user)
+        saved.coverPhotoUrl = photoStreamUrl(userId, "cover", saved.updatedAt.toEpochSecond(ZoneOffset.UTC))
+        return buildUserResponse(saved)
     }
 
     // ====================================================================
@@ -178,10 +185,13 @@ class UserService(
     }
 
     // Builds an absolute URL streamed by our own controller. forward-headers
-    // strategy turns Render's X-Forwarded-* into the real https host.
-    private fun photoStreamUrl(userId: Long, which: String): String =
+    // strategy turns the proxy's X-Forwarded-* into the real https host.
+    // `version` (epoch seconds of the upload) cache-busts the URL: each
+    // upload produces a NEW url, so replacements never look stale.
+    private fun photoStreamUrl(userId: Long, which: String, version: Long): String =
         ServletUriComponentsBuilder.fromCurrentContextPath()
             .path("/api/user/$which/photo/{userId}")
+            .queryParam("v", version)
             .buildAndExpand(userId)
             .toUriString()
 
@@ -256,7 +266,9 @@ class UserService(
         val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "updatedAt"))
         val result = userRepository.searchPeople(cleanQuery, pageable)
 
-        val content = result.content.map { PeopleListItemResponse.fromEntity(it) }
+        // Repository already returns PeopleListItemResponse (projection -
+        // no mapping step, no BYTEA loaded).
+        val content = result.content
 
         return PagedResponse(
             content = content,

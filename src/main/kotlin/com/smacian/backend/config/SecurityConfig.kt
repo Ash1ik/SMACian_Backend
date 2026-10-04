@@ -61,7 +61,7 @@ class SecurityConfig(
                     // PUBLIC endpoints (no login required)
                     .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
                     .requestMatchers("/api/terms", "/api/privacy").permitAll()
-                    .requestMatchers("/uploads/**").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
 
                     // Photo BYTEA streams - the mobile <Image> component loads
                     // these WITHOUT a JWT header, so they must be public. Only
@@ -101,17 +101,19 @@ class SecurityConfig(
         config.authenticationManager
 
     /*
-     * CORS config - allows mobile apps to call us from any origin.
-     * In production, restrict this to your real app domains.
+     * CORS config. Mobile apps don't do CORS, so credentials are OFF and
+     * any origin may call the public API. If a browser web app consumes
+     * this API later, replace "*" with its exact https origin(s) here.
      */
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val configuration = CorsConfiguration()
             .apply {
-                allowedOriginPatterns = listOf("*")       // any origin (dev)
+                allowedOriginPatterns = listOf("*")
                 allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
                 allowedHeaders = listOf("Authorization", "Content-Type", "Accept")
-                allowCredentials = true
+                // NEVER true together with "*" - browsers reject that combo.
+                allowCredentials = false
             }
 
         return UrlBasedCorsConfigurationSource().apply {

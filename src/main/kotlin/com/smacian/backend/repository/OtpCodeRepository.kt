@@ -33,6 +33,15 @@ interface OtpCodeRepository : JpaRepository<OtpCode, Long> {
     ): Optional<OtpCode>
 
     /*
+     * Latest OTP for contact+purpose regardless of used flag.
+     * Used by the resend-cooldown check in sendOtp().
+     */
+    fun findTopByContactAndPurposeOrderByCreatedAtDesc(
+        contact: String,
+        purpose: OtpPurpose
+    ): Optional<OtpCode>
+
+    /*
      * Marks ALL unused OTPs as "used" for a contact+purpose.
      * Successful verification invalidates any older codes.
      *

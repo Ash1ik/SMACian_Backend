@@ -19,11 +19,15 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.authentication.BadCredentialsException
+import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.multipart.support.MissingServletRequestPartException
 
@@ -244,6 +248,69 @@ class GlobalExceptionHandler {
             path = getPath(request)
         )
         return ResponseEntity.badRequest().body(response)
+    }
+
+    // ====================================================================
+    // 8b. RATE LIMITED - too many requests (OTP cooldown / max attempts)
+    // ====================================================================
+    // HTTP 429 (not 400) so clients know to BACK OFF, not fix input.
+
+    @ExceptionHandler(TooManyRequestsException::class)
+    fun handleTooManyRequests(ex: TooManyRequestsException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.TOO_MANY_REQUESTS.value(),
+            error = "Too Many Requests",
+            message = ex.message ?: "You are acting too fast. Please wait and try again",
+            path = getPath(request)
+        )
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response)
+    }
+
+    // ====================================================================
+    // 8c. AUTHENTICATED BUT NOT ALLOWED - Spring's own 403
+    // ====================================================================
+    // Without this, authorization failures fall to the generic 500 handler.
+
+    @ExceptionHandler(AccessDeniedException::class)
+    fun handleAccessDenied(ex: AccessDeniedException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.FORBIDDEN.value(),
+            error = "Forbidden",
+            message = "You don't have permission to do this",
+            path = getPath(request)
+        )
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response)
+    }
+
+    // ====================================================================
+    // 8d. BAD PATH VARIABLE / QUERY PARAM TYPE OR MISSING PARAM
+    // ====================================================================
+    // e.g. GET /api/feed/abc (abc is not a Long) -> HTTP 400, not 500.
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class, MissingServletRequestParameterException::class)
+    fun handleBadParameter(ex: Exception, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.BAD_REQUEST.value(),
+            error = "Bad Request",
+            message = "Invalid request parameter",
+            path = getPath(request)
+        )
+        return ResponseEntity.badRequest().body(response)
+    }
+
+    // ====================================================================
+    // 8e. WRONG HTTP METHOD - e.g. GET on a POST-only endpoint -> 405
+    // ====================================================================
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
+    fun handleMethodNotSupported(ex: HttpRequestMethodNotSupportedException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.METHOD_NOT_ALLOWED.value(),
+            error = "Method Not Allowed",
+            message = "This endpoint does not support ${ex.method} requests",
+            path = getPath(request)
+        )
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response)
     }
 
     // ====================================================================

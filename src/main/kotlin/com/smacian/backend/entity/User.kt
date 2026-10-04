@@ -31,6 +31,11 @@ import java.time.LocalDateTime
     uniqueConstraints = [
         UniqueConstraint(name = "uk_users_email", columnNames = ["email"]),
         UniqueConstraint(name = "uk_users_phone", columnNames = ["phone"])
+    ],
+    // Feed/people-list sorting + active filtering. Applied by ddl-auto.
+    indexes = [
+        Index(name = "idx_users_updated_at", columnList = "updated_at"),
+        Index(name = "idx_users_active", columnList = "is_active")
     ]
 )
 class User {

@@ -67,6 +67,10 @@ dependencies {
     // spring-boot-starter-validation lets us validate incoming data.
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+    // ====== Actuator (health/info for host health-checks) ======
+    // Only health+info are exposed (see application.properties).
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
     // ====== Cloudinary (free image storage) ======
     // Cloudinary stores user profile photos and cover photos in the cloud.
     implementation 'com.cloudinary:cloudinary-http5:2.4.0'

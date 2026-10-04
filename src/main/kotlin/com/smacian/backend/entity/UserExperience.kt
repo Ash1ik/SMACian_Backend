@@ -12,7 +12,12 @@ import org.hibernate.annotations.OnDeleteAction
 import java.time.LocalDateTime
 
 @Entity
-@Table(name = "user_experiences")
+@Table(
+    name = "user_experiences",
+    indexes = [
+        Index(name = "idx_user_experiences_user_id", columnList = "user_id")
+    ]
+)
 class UserExperience {
 
     @Id

@@ -74,7 +74,9 @@ class JwtAuthenticationFilter(
             // Step 4: If the user exists and isn't already
             // authenticated in this request, authenticate them.
             // =====================================================
-            if (user != null && SecurityContextHolder.getContext().authentication == null) {
+            // Inactive (deactivated/banned) users authenticate to NOTHING -
+            // the ban bites immediately instead of at token expiry.
+            if (user != null && user.isActive && SecurityContextHolder.getContext().authentication == null) {
 
                 // Build Spring's UserDetails object.
                 // We store the user ID as the "username".
