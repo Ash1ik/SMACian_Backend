@@ -7,7 +7,12 @@
  *                      "width": 1600, "height": 1200, "sortOrder": 0 }],
  *         "likeCount": 12, "commentCount": 4, "shareCount": 2,
  *         "likedByMe": true,
+ *         "sharedPost": { ...nested PostResponse of the original... },
  *         "createdAt": "2026-10-04T10:15:00", "updatedAt": "..." }
+ *
+ * sharedPost is null for original posts; for reshares it embeds the
+ * ULTIMATE original (shares never chain). Its own counts/likedByMe apply
+ * to the original; the outer counters belong to the reshare itself.
  *
  * images carry id + absolute stream URL + stored dimensions + sortOrder
  * (pre-sorted) so Android can lay out before downloading bytes. URLs are
@@ -34,6 +39,7 @@ data class PostResponse(
     val commentCount: Long,
     val shareCount: Int,
     val likedByMe: Boolean,
+    val sharedPost: PostResponse? = null,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime
 ) {
@@ -43,7 +49,8 @@ data class PostResponse(
             images: List<PostImageResponse>,
             likeCount: Long,
             commentCount: Long,
-            likedByMe: Boolean
+            likedByMe: Boolean,
+            sharedPost: PostResponse? = null
         ): PostResponse {
             val author = entity.author!!
             return PostResponse(
@@ -57,6 +64,7 @@ data class PostResponse(
                 commentCount = commentCount,
                 shareCount = entity.shareCount,
                 likedByMe = likedByMe,
+                sharedPost = sharedPost,
                 createdAt = entity.createdAt,
                 updatedAt = entity.updatedAt
             )

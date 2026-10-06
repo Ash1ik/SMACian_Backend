@@ -283,50 +283,75 @@ class NewsfeedService(
 
     // Builds the full PostResponse for ONE post (single-post endpoints).
     // Authors here are lazy-loaded (1 extra SELECT) - acceptable outside lists.
-    // Image rows come from the METADATA query (no BYTEA).
+    // Image rows come from the METADATA query (no BYTEA). Reshares embed
+    // their ultimate original (depth <= 1, shares never chain).
     private fun toPostResponse(post: Post, viewerId: Long): PostResponse {
         val postId = post.id!!
+        val shared = post.sharedFrom?.let { ref ->
+            val original = postRepository.findById(ref.id!!)
+                .orElseThrow { ResourceNotFoundException("Post not found") }
+            toPostResponse(original, viewerId)
+        }
         return PostResponse.fromEntity(
             entity = post,
             images = postImageRepository.findMetadataByPostIdOrdered(postId).map { toImageResponse(it) },
             likeCount = postLikeRepository.countByPostId(postId),
             commentCount = commentRepository.countByPostId(postId),
-            likedByMe = postLikeRepository.existsByPostIdAndUserId(postId, viewerId)
+            likedByMe = postLikeRepository.existsByPostIdAndUserId(postId, viewerId),
+            sharedPost = shared
         )
     }
 
     // Maps a WHOLE page with 4 extra queries TOTAL (not per post):
-    // 1 image metadata, 1 like counts, 1 comment counts, 1 liked ids.
+    // 1 image metadata, 1 like counts, 1 comment counts, 1 liked ids
+    // (+1 originals fetch ONLY when the page contains reshares).
     // Authors come JOIN FETCHed - no per-post lazy SELECT. No BYTEA loaded.
     private fun toPostResponseList(posts: List<Post>, viewerId: Long): List<PostResponse> {
         if (posts.isEmpty()) return emptyList()
         val ids = posts.map { it.id!! }
 
+        // Reshare sources in this page: proxy `.id` reads cost no SELECT.
+        // Originals already on the page are reused (no refetch).
+        val wantedOriginalIds = posts.mapNotNull { it.sharedFrom?.id }.distinct()
+        val pageById = posts.associateBy { it.id!! }
+        val missingOriginalIds = wantedOriginalIds.filter { it !in pageById }
+        val fetchedOriginals = if (missingOriginalIds.isNotEmpty()) {
+            postRepository.findAllWithAuthorByIds(missingOriginalIds)
+        } else emptyList()
+        val allById = pageById + fetchedOriginals.associateBy { it.id!! }
+
+        val allIds = ids + missingOriginalIds
         // (postId, id, width, height, sortOrder) ordered by sort_order;
         // groupBy preserves encounter order, so each post's images stay
         // in upload order. Still zero BYTEA.
         val imagesByPost: Map<Long, List<PostImageResponse>> =
-            postImageRepository.findMetadataByPostIds(ids)
+            postImageRepository.findMetadataByPostIds(allIds)
                 .groupBy(
                     { (it[0] as Long) },
                     { row -> toImageResponse(arrayOf(row[1], row[2], row[3], row[4])) }
                 )
-        val likeCounts = postLikeRepository.countByPostIds(ids)
+        val likeCounts = postLikeRepository.countByPostIds(allIds)
             .associate { (it[0] as Long) to (it[1] as Long) }
-        val commentCounts = commentRepository.countByPostIds(ids)
+        val commentCounts = commentRepository.countByPostIds(allIds)
             .associate { (it[0] as Long) to (it[1] as Long) }
-        val likedIds = postLikeRepository.findLikedPostIds(ids, viewerId).toSet()
+        val likedIds = postLikeRepository.findLikedPostIds(allIds, viewerId).toSet()
 
-        return posts.map { post ->
+        // Recursive build, depth <= 1 (shares always point at the ultimate
+        // original, never at another reshare).
+        fun build(post: Post): PostResponse {
             val postId = post.id!!
-            PostResponse.fromEntity(
+            val shared = post.sharedFrom?.let { ref -> allById[ref.id]?.let { build(it) } }
+            return PostResponse.fromEntity(
                 entity = post,
                 images = imagesByPost[postId] ?: emptyList(),
                 likeCount = likeCounts[postId] ?: 0L,
                 commentCount = commentCounts[postId] ?: 0L,
-                likedByMe = postId in likedIds
+                likedByMe = postId in likedIds,
+                sharedPost = shared
             )
         }
+
+        return posts.map { build(it) }
     }
 
     // (id, width, height, sortOrder) metadata row -> DTO. width/height are
@@ -421,27 +446,39 @@ class NewsfeedService(
     }
 
     // ====================================================================
-    // 8. SHARE a post (increments the share counter)
+    // 8. SHARE a post - Facebook-style reshare onto my own feed
     // ====================================================================
-    // A "share" here = the user forwarded the post (to chat, story, etc.).
-    // We count it; the app does the actual forwarding UI-side.
+    // Creates a NEW post by me embedding the original (with my optional
+    // text on top) + atomically bumps the ORIGINAL's share counter.
+    // Sharing a reshare flattens to the ULTIMATE original (never chains).
+    // Likes/comments stay separate per copy. Deleting the original deletes
+    // its reshares (ON DELETE CASCADE on shared_from_id).
     @Transactional
-    fun sharePost(userId: Long, postId: Long): PostResponse {
+    fun sharePost(userId: Long, postId: Long, content: String?): PostResponse {
 
-        if (!userRepository.existsById(userId)) {
-            throw ResourceNotFoundException("User not found")
-        }
-
-        // Atomic counter bump - concurrent shares can never lose increments
-        // (no read-modify-write). Returns 0 when the post doesn't exist.
-        val updated = postRepository.incrementShareCount(postId)
-        if (updated == 0) {
-            throw ResourceNotFoundException("Post not found")
-        }
-
-        // Fresh read: the post was never loaded above, so no stale L1 entry.
+        val user = userRepository.findById(userId)
+            .orElseThrow { ResourceNotFoundException("User not found") }
         val post = getPostById(postId)
-        return toPostResponse(post, userId)
+
+        // Flatten: a reshare always points at the ultimate original.
+        val original = post.sharedFrom ?: post
+        val originalId = original.id!!
+
+        val cleanContent = content?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanContent != null && cleanContent.length > MAX_CONTENT_LENGTH) {
+            throw BadRequestException("Post text must be $MAX_CONTENT_LENGTH characters or less")
+        }
+
+        // Atomic counter bump on the original (never loses increments).
+        postRepository.incrementShareCount(originalId)
+
+        // The reshare itself: my post, my optional text, no own images.
+        val reshare = Post().apply {
+            this.author = user
+            this.content = cleanContent
+            this.sharedFrom = original
+        }
+        return toPostResponse(postRepository.save(reshare), userId)
     }
 
     // ====================================================================

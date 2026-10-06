@@ -45,4 +45,11 @@ interface PostRepository : JpaRepository<Post, Long> {
     @Modifying
     @Query("UPDATE Post p SET p.shareCount = p.shareCount + 1 WHERE p.id = :postId")
     fun incrementShareCount(@Param("postId") postId: Long): Int
+
+    /*
+     * Reshare originals with authors in ONE query (for embedding in feed
+     * responses without per-original lazy SELECTs).
+     */
+    @Query("SELECT p FROM Post p JOIN FETCH p.author WHERE p.id IN :ids")
+    fun findAllWithAuthorByIds(@Param("ids") ids: List<Long>): List<Post>
 }

@@ -32,6 +32,14 @@ class Post {
     @OnDelete(action = OnDeleteAction.CASCADE)
     var author: User? = null
 
+    // Reshare source (Facebook-style share). Null = original post.
+    // A reshare embeds this post; deleting it deletes its reshares too.
+    // Shares always point at the ULTIMATE original (never chains).
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shared_from_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    var sharedFrom: Post? = null
+
     // Free text of the post. Nullable - an image-only post is allowed
     // (but a post with neither text nor images is rejected in the service).
     @field:Column(name = "content", columnDefinition = "TEXT")

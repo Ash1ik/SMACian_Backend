@@ -8,7 +8,7 @@
  *   DELETE /api/feed/{id}              -> delete own post
  *   POST   /api/feed/{id}/like         -> like (idempotent)
  *   DELETE /api/feed/{id}/like         -> unlike (idempotent)
- *   POST   /api/feed/{id}/share        -> share (bumps shareCount)
+ *   POST   /api/feed/{id}/share        -> reshare onto my feed (+optional text)
  *   GET    /api/feed/{id}/comments     -> nested comment tree
  *   POST   /api/feed/{id}/comments     -> comment or reply (parentId)
  *   DELETE /api/feed/comments/{cid}    -> delete own comment (+replies)
@@ -25,6 +25,7 @@
 package com.smacian.backend.controller
 
 import com.smacian.backend.dto.request.CommentRequest
+import com.smacian.backend.dto.request.ShareRequest
 import com.smacian.backend.dto.response.CommentResponse
 import com.smacian.backend.dto.response.LikeResponse
 import com.smacian.backend.dto.response.PagedResponse
@@ -159,15 +160,21 @@ class NewsfeedController(
     }
 
     // ====================================================================
-    // 7. SHARE a post -> returns the post with bumped shareCount
+    // 7. SHARE a post -> reshares onto MY feed, returns the new reshare
     // ====================================================================
-    // Counts the share; the app handles the actual forwarding UI
-    // (system share sheet, chat, story...).
+    // Facebook-style: creates a new post by me embedding the original,
+    // with my optional text on top. Body is optional:
+    //   { "content": "Must read!" }  -> reshare with my text
+    //   (empty/absent body)          -> plain reshare
+    // Sharing a reshare flattens to the ultimate original.
 
     @PostMapping("/{id}/share")
-    fun sharePost(@PathVariable id: Long): ResponseEntity<PostResponse> {
-        val post = newsfeedService.sharePost(CurrentUser.getUserId(), id)
-        return ResponseEntity.ok(post)
+    fun sharePost(
+        @PathVariable id: Long,
+        @RequestBody(required = false) request: ShareRequest?
+    ): ResponseEntity<PostResponse> {
+        val post = newsfeedService.sharePost(CurrentUser.getUserId(), id, request?.content)
+        return ResponseEntity.status(HttpStatus.CREATED).body(post)
     }
 
     // ====================================================================
