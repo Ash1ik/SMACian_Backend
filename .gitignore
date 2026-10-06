@@ -30,6 +30,7 @@ bin/
 .env
 application-local.yml
 local-run.ps1
+local-db-start.ps1
 
 # ======================================================
 # Local PostgreSQL (portable dev database)
