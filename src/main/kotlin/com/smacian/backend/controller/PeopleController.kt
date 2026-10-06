@@ -26,18 +26,20 @@ class PeopleController(
 ) {
 
     // ====================================================================
-    // 1. PEOPLE SEARCH (paged) - ?search=&page=0&size=20
+    // 1. PEOPLE SEARCH (paged) - ?search=&bloodGroup=A%2B&page=0&size=20
     // ====================================================================
-    // Case-insensitive match on full name OR designation.
+    // Case-insensitive match on full name OR designation, plus an optional
+    // exact blood-group filter ("A+", "o-", "A_POSITIVE" ...; garbage = 400).
     // Sorted by updatedAt desc. Returns with a default empty query = first 20.
 
     @GetMapping
     fun searchPeople(
         @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) bloodGroup: String?,
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): PagedResponse<PeopleListItemResponse> =
-        userService.searchPeople(search ?: "", page, size)
+        userService.searchPeople(search ?: "", bloodGroup, page, size)
 
     // ====================================================================
     // 2. PUBLIC PROFILE - GET /api/users/{id}

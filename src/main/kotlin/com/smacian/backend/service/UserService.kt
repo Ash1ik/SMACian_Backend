@@ -257,14 +257,29 @@ class UserService(
     // 6. SEARCH PEOPLE (paged, name OR designation, updatedAt desc)
     // ====================================================================
     @Transactional(readOnly = true)
-    fun searchPeople(query: String, page: Int, size: Int): PagedResponse<PeopleListItemResponse> {
+    fun searchPeople(
+        query: String,
+        bloodGroup: String?,
+        page: Int,
+        size: Int
+    ): PagedResponse<PeopleListItemResponse> {
 
         val safePage = page.coerceAtLeast(0)
         val safeSize = size.coerceIn(1, 50)
         val cleanQuery = query.trim()
 
+        // bloodGroup accepts labels ("A+", "o-") or names ("A_POSITIVE"),
+        // case-insensitive; blank/omitted = no filter. Garbage -> 400.
+        val cleanBg = bloodGroup?.trim()?.takeIf { it.isNotEmpty() }
+        val bg = cleanBg?.let {
+            BloodGroup.fromLabelOrNull(it)
+                ?: throw BadRequestException(
+                    "Invalid blood group '$it'. Allowed: A+, A-, B+, B-, AB+, AB-, O+, O-"
+                )
+        }
+
         val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "updatedAt"))
-        val result = userRepository.searchPeople(cleanQuery, pageable)
+        val result = userRepository.searchPeople(cleanQuery, bg, pageable)
 
         // Repository already returns PeopleListItemResponse (projection -
         // no mapping step, no BYTEA loaded).

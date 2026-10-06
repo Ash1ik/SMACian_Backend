@@ -15,6 +15,7 @@
 package com.smacian.backend.repository
 
 import com.smacian.backend.entity.User
+import com.smacian.backend.entity.enums.BloodGroup
 import com.smacian.backend.dto.response.PeopleListItemResponse
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -55,7 +56,8 @@ interface UserRepository : JpaRepository<User, Long> {
     fun existsByPhoneAndIdNot(phone: String, id: Long): Boolean
 
     /*
-     * People search: case-insensitive ILIKE on full name OR designation.
+     * People search: case-insensitive ILIKE on full name OR designation,
+     * plus an optional exact blood-group filter (null = all groups).
      * Only active users are returned; sorted by updatedAt desc (via Pageable sort).
      *
      * Projection (SELECT NEW ...) fetches ONLY the 5 displayed columns -
@@ -66,17 +68,23 @@ interface UserRepository : JpaRepository<User, Long> {
             "u.id, CONCAT(CONCAT(u.firstName, ' '), u.lastName), " +
             "u.profilePhotoUrl, u.designation, u.bloodGroup) " +
             "FROM User u " +
-            "WHERE u.isActive = true AND (" +
+            "WHERE u.isActive = true " +
+            "AND (:bg IS NULL OR u.bloodGroup = :bg) AND (" +
             "  :q = '' " +
             "  OR lower(concat(u.firstName, ' ', u.lastName)) LIKE lower(concat('%', :q, '%')) " +
             "  OR lower(coalesce(u.designation, '')) LIKE lower(concat('%', :q, '%'))" +
             ")",
         countQuery = "SELECT COUNT(u) FROM User u " +
-            "WHERE u.isActive = true AND (" +
+            "WHERE u.isActive = true " +
+            "AND (:bg IS NULL OR u.bloodGroup = :bg) AND (" +
             "  :q = '' " +
             "  OR lower(concat(u.firstName, ' ', u.lastName)) LIKE lower(concat('%', :q, '%')) " +
             "  OR lower(coalesce(u.designation, '')) LIKE lower(concat('%', :q, '%'))" +
             ")"
     )
-    fun searchPeople(@Param("q") q: String, pageable: Pageable): Page<PeopleListItemResponse>
+    fun searchPeople(
+        @Param("q") q: String,
+        @Param("bg") bloodGroup: BloodGroup?,
+        pageable: Pageable
+    ): Page<PeopleListItemResponse>
 }
