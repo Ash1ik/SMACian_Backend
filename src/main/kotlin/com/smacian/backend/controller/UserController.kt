@@ -21,6 +21,7 @@ import com.smacian.backend.dto.request.UpdateProfileRequestExtended
 import com.smacian.backend.dto.response.UserResponse
 import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.UserService
+import com.smacian.backend.util.HttpCache.matchesEtag
 import jakarta.validation.Valid
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -32,7 +33,9 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestPart
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
@@ -96,12 +99,24 @@ class UserController(
     // loads it without any Authorization header. We return the raw BYTEA
     // bytes with the stored content type so React Native renders it.
     @GetMapping("/profile/photo/{userId}")
-    fun streamProfilePhoto(@PathVariable userId: Long): ResponseEntity<ByteArray> {
+    fun streamProfilePhoto(
+        @PathVariable userId: Long,
+        @RequestParam(required = false) v: String?,
+        @RequestHeader(value = "If-None-Match", required = false) ifNoneMatch: String?
+    ): ResponseEntity<ByteArray> {
+        // Version-bound ETag: a new upload = new ?v= = new cache key.
+        // No v (legacy URLs) -> no ETag, so a revalidation can never 304
+        // stale bytes after the photo was replaced.
+        val etag = v?.let { "\"profile-$userId-$it\"" }
+        if (etag != null && matchesEtag(ifNoneMatch, etag)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build()
+        }
         val (data, contentType) = userService.getProfilePhotoStream(userId)
-        return ResponseEntity.status(HttpStatus.OK)
+        val body = ResponseEntity.status(HttpStatus.OK)
             .contentType(MediaType.parseMediaType(contentType))
             .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
-            .body(data)
+        if (etag != null) body.eTag(etag)
+        return body.body(data)
     }
 
     // ====================================================================
@@ -141,11 +156,21 @@ class UserController(
     // stores points HERE (permitAll in SecurityConfig - mobile <Image> src
     // has no Authorization header). Returns raw BYTEA + stored content type.
     @GetMapping("/cover/photo/{userId}")
-    fun streamCoverPhoto(@PathVariable userId: Long): ResponseEntity<ByteArray> {
+    fun streamCoverPhoto(
+        @PathVariable userId: Long,
+        @RequestParam(required = false) v: String?,
+        @RequestHeader(value = "If-None-Match", required = false) ifNoneMatch: String?
+    ): ResponseEntity<ByteArray> {
+        // Same version-bound ETag pattern as streamProfilePhoto above.
+        val etag = v?.let { "\"cover-$userId-$it\"" }
+        if (etag != null && matchesEtag(ifNoneMatch, etag)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build()
+        }
         val (data, contentType) = userService.getCoverPhotoStream(userId)
-        return ResponseEntity.status(HttpStatus.OK)
+        val body = ResponseEntity.status(HttpStatus.OK)
             .contentType(MediaType.parseMediaType(contentType))
             .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
-            .body(data)
+        if (etag != null) body.eTag(etag)
+        return body.body(data)
     }
 }

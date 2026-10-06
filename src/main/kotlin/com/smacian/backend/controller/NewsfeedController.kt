@@ -32,6 +32,7 @@ import com.smacian.backend.dto.response.PagedResponse
 import com.smacian.backend.dto.response.PostResponse
 import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.NewsfeedService
+import com.smacian.backend.util.HttpCache.matchesEtag
 import jakarta.validation.Valid
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -43,6 +44,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RequestPart
@@ -220,11 +222,21 @@ class NewsfeedController(
     // SecurityConfig because <Image> src loads without any Authorization
     // header. Returns the raw BYTEA bytes with the stored content type.
     @GetMapping("/images/{imageId}")
-    fun streamPostImage(@PathVariable imageId: Long): ResponseEntity<ByteArray> {
+    fun streamPostImage(
+        @PathVariable imageId: Long,
+        @RequestHeader(value = "If-None-Match", required = false) ifNoneMatch: String?
+    ): ResponseEntity<ByteArray> {
+        // Post-image rows are IMMUTABLE (replaced, never updated), so the id
+        // alone is a strong validator: 1-year immutable cache + 304 support.
+        val etag = "\"postimg-$imageId\""
+        if (matchesEtag(ifNoneMatch, etag)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build()
+        }
         val (data, contentType) = newsfeedService.getPostImageStream(imageId)
         return ResponseEntity.status(HttpStatus.OK)
+            .eTag(etag)
             .contentType(MediaType.parseMediaType(contentType))
-            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+            .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000, immutable")
             .body(data)
     }
 }
