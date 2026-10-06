@@ -10,7 +10,6 @@ import com.smacian.backend.entity.Post
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
-import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -39,12 +38,19 @@ interface PostRepository : JpaRepository<Post, Long> {
     fun findMyPostsPage(@Param("authorId") authorId: Long, pageable: Pageable): Page<Post>
 
     /*
-     * Atomic share-counter bump. Concurrent shares can never lose
-     * increments (no read-modify-write). Returns rows updated (0 = no post).
+     * Reshare counts for a whole page of posts in ONE query.
+     * Returns (originalPostId, count) pairs; posts with zero reshares absent.
+     * shareCount is DERIVED from real reshare rows - it can never drift
+     * out of sync the way a stored counter did.
      */
-    @Modifying
-    @Query("UPDATE Post p SET p.shareCount = p.shareCount + 1 WHERE p.id = :postId")
-    fun incrementShareCount(@Param("postId") postId: Long): Int
+    @Query("SELECT p.sharedFrom.id, COUNT(p) FROM Post p WHERE p.sharedFrom.id IN :ids GROUP BY p.sharedFrom.id")
+    fun countResharesByPostIds(@Param("ids") ids: List<Long>): List<Array<Any>>
+
+    /*
+     * Reshare count for ONE post (single-post mapping).
+     */
+    @Query("SELECT COUNT(p) FROM Post p WHERE p.sharedFrom.id = :postId")
+    fun countResharesByPostId(@Param("postId") postId: Long): Long
 
     /*
      * Reshare originals with authors in ONE query (for embedding in feed

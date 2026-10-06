@@ -45,11 +45,10 @@ class Post {
     @field:Column(name = "content", columnDefinition = "TEXT")
     var content: String? = null
 
-    // How many times the post was shared. Incremented by POST /{id}/share.
-    // columnDefinition carries the DEFAULT so existing rows get 0 when
-    // ddl-auto=update adds this column to a non-empty table.
-    @field:Column(name = "share_count", nullable = false, columnDefinition = "integer default 0")
-    var shareCount: Int = 0
+    // NOTE: a share_count column may still exist in older databases (from
+    // the stored-counter era). It is deliberately UNMAPPED now: shareCount
+    // is derived from reshare rows and can never drift. The orphan column
+    // will be dropped properly when Flyway migrations arrive.
 
     @field:Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: LocalDateTime = LocalDateTime.now()

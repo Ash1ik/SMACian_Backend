@@ -50,6 +50,7 @@ data class PostResponse(
             likeCount: Long,
             commentCount: Long,
             likedByMe: Boolean,
+            shareCount: Long,
             sharedPost: PostResponse? = null
         ): PostResponse {
             val author = entity.author!!
@@ -62,7 +63,7 @@ data class PostResponse(
                 images = images,
                 likeCount = likeCount,
                 commentCount = commentCount,
-                shareCount = entity.shareCount,
+                shareCount = shareCount.toInt(),
                 likedByMe = likedByMe,
                 sharedPost = sharedPost,
                 createdAt = entity.createdAt,

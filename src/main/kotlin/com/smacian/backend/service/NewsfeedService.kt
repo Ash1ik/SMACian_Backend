@@ -298,6 +298,7 @@ class NewsfeedService(
             likeCount = postLikeRepository.countByPostId(postId),
             commentCount = commentRepository.countByPostId(postId),
             likedByMe = postLikeRepository.existsByPostIdAndUserId(postId, viewerId),
+            shareCount = postRepository.countResharesByPostId(postId),
             sharedPost = shared
         )
     }
@@ -335,6 +336,8 @@ class NewsfeedService(
         val commentCounts = commentRepository.countByPostIds(allIds)
             .associate { (it[0] as Long) to (it[1] as Long) }
         val likedIds = postLikeRepository.findLikedPostIds(allIds, viewerId).toSet()
+        val reshareCounts = postRepository.countResharesByPostIds(allIds)
+            .associate { (it[0] as Long) to (it[1] as Long) }
 
         // Recursive build, depth <= 1 (shares always point at the ultimate
         // original, never at another reshare).
@@ -347,6 +350,7 @@ class NewsfeedService(
                 likeCount = likeCounts[postId] ?: 0L,
                 commentCount = commentCounts[postId] ?: 0L,
                 likedByMe = postId in likedIds,
+                shareCount = reshareCounts[postId] ?: 0L,
                 sharedPost = shared
             )
         }
@@ -462,16 +466,14 @@ class NewsfeedService(
 
         // Flatten: a reshare always points at the ultimate original.
         val original = post.sharedFrom ?: post
-        val originalId = original.id!!
 
         val cleanContent = content?.trim()?.takeIf { it.isNotEmpty() }
         if (cleanContent != null && cleanContent.length > MAX_CONTENT_LENGTH) {
             throw BadRequestException("Post text must be $MAX_CONTENT_LENGTH characters or less")
         }
 
-        // Atomic counter bump on the original (never loses increments).
-        postRepository.incrementShareCount(originalId)
-
+        // No counter to bump: shareCount is DERIVED from reshare rows, so
+        // creating this row IS the count. It can never drift out of sync.
         // The reshare itself: my post, my optional text, no own images.
         val reshare = Post().apply {
             this.author = user
