@@ -179,6 +179,87 @@ class BloodRequestService(
     }
 
     // ====================================================================
+    // 3b. UPDATE (requester only, OPEN requests only)
+    // ====================================================================
+    // Multipart, same fields as create, all optional: absent = keep.
+    // bloodGroup is IMMUTABLE (medical fact, typo-fix via delete+recreate);
+    // status changes go through PATCH. Images: null = keep, non-null =
+    // REPLACE the whole set (max 2, same pipeline). updatedAt bumps via
+    // @PreUpdate.
+    @Transactional
+    fun updateRequest(
+        requesterId: Long,
+        requestId: Long,
+        bags: String?,
+        urgency: String?,
+        hospital: String?,
+        location: String?,
+        neededBy: String?,
+        contactNumber: String?,
+        note: String?,
+        images: List<MultipartFile>?
+    ): BloodRequestResponse {
+
+        val request = getRequestById(requestId)
+
+        if (request.requester!!.id != requesterId) {
+            throw ForbiddenException("You can only edit your own blood requests")
+        }
+
+        if (request.status != BloodRequestStatus.OPEN) {
+            throw BadRequestException("Only OPEN requests can be edited (current: ${request.status.name})")
+        }
+
+        // ---- merge provided fields over existing, then validate the whole ----
+        // (reuses the create validator, so rules can never drift apart).
+        val (valid, errors) = BloodRequestValidation.validate(
+            bloodGroup = request.bloodGroup!!.label,
+            bags = bags ?: request.bags.toString(),
+            urgency = urgency ?: request.urgency.name,
+            hospital = hospital ?: request.hospital,
+            location = location ?: request.location,
+            neededBy = neededBy ?: request.neededBy.toString(),
+            contactNumber = contactNumber ?: request.contactNumber,
+            note = note ?: request.note
+        )
+        if (valid == null) {
+            throw ValidationException(errors)
+        }
+
+        // ---- images: null = keep; non-null = replace whole set ----
+        val files = images?.filter { !it.isEmpty }
+        if (files != null) {
+            if (files.size > MAX_IMAGES_PER_REQUEST) {
+                throw BadRequestException("A blood request can have at most $MAX_IMAGES_PER_REQUEST photos")
+            }
+            files.forEach { validateImageFile(it) }
+            val processed = files.map { ImageProcessing.process(it) }
+            bloodRequestImageRepository.deleteByBloodRequestId(requestId)
+            processed.forEachIndexed { index, img ->
+                val image = BloodRequestImage().apply {
+                    this.bloodRequest = request
+                    this.imageData = img.bytes
+                    this.contentType = img.contentType
+                    this.width = img.width
+                    this.height = img.height
+                    this.sortOrder = index
+                }
+                bloodRequestImageRepository.save(image)
+            }
+        }
+
+        request.bags = valid.bags
+        request.urgency = valid.urgency
+        request.hospital = valid.hospital
+        request.location = valid.location
+        request.neededBy = valid.neededBy
+        request.contactNumber = valid.contactNumber
+        request.note = valid.note
+
+        return toResponse(bloodRequestRepository.save(request))
+    }
+
+    // ====================================================================
     // 4. CLOSE (requester only): FULFILLED or CANCELLED
     // ====================================================================
     @Transactional

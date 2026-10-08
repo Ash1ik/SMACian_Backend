@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -99,6 +100,33 @@ class BloodRequestController(
     fun getRequest(@PathVariable id: Long): ResponseEntity<BloodRequestResponse> {
         val request = bloodRequestService.getRequest(id)
         return ResponseEntity.ok(request)
+    }
+
+    // ====================================================================
+    // 3b. UPDATE - PUT /api/blood-requests/{id} (requester only, OPEN only)
+    // ====================================================================
+    // Same multipart fields as create, ALL optional (omit = keep).
+    // bloodGroup can't change (medical fact); status changes via PATCH.
+    // images: omit = keep photos, send 0-2 parts = replace the whole set.
+
+    @PutMapping(value = ["/{id}"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun updateRequest(
+        @PathVariable id: Long,
+        @RequestParam(required = false) bags: String?,
+        @RequestParam(required = false) urgency: String?,
+        @RequestParam(required = false) hospital: String?,
+        @RequestParam(required = false) location: String?,
+        @RequestParam(required = false) neededBy: String?,
+        @RequestParam(required = false) contactNumber: String?,
+        @RequestParam(required = false) note: String?,
+        @RequestPart(required = false) images: List<MultipartFile>?
+    ): ResponseEntity<BloodRequestResponse> {
+        val updated = bloodRequestService.updateRequest(
+            CurrentUser.getUserId(), id,
+            bags, urgency, hospital, location,
+            neededBy, contactNumber, note, images
+        )
+        return ResponseEntity.ok(updated)
     }
 
     // ====================================================================
