@@ -106,12 +106,13 @@ class BloodRequestController(
     // 3b. UPDATE - PUT /api/blood-requests/{id} (requester only, OPEN only)
     // ====================================================================
     // Same multipart fields as create, ALL optional (omit = keep).
-    // bloodGroup can't change (medical fact); status changes via PATCH.
+    // Full edit while OPEN (incl. bloodGroup); status changes via PATCH.
     // images: omit = keep photos, send 0-2 parts = replace the whole set.
 
     @PutMapping(value = ["/{id}"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun updateRequest(
         @PathVariable id: Long,
+        @RequestParam(required = false) bloodGroup: String?,
         @RequestParam(required = false) bags: String?,
         @RequestParam(required = false) urgency: String?,
         @RequestParam(required = false) hospital: String?,
@@ -123,7 +124,7 @@ class BloodRequestController(
     ): ResponseEntity<BloodRequestResponse> {
         val updated = bloodRequestService.updateRequest(
             CurrentUser.getUserId(), id,
-            bags, urgency, hospital, location,
+            bloodGroup, bags, urgency, hospital, location,
             neededBy, contactNumber, note, images
         )
         return ResponseEntity.ok(updated)

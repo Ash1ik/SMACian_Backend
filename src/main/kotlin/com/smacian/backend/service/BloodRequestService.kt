@@ -182,14 +182,14 @@ class BloodRequestService(
     // 3b. UPDATE (requester only, OPEN requests only)
     // ====================================================================
     // Multipart, same fields as create, all optional: absent = keep.
-    // bloodGroup is IMMUTABLE (medical fact, typo-fix via delete+recreate);
-    // status changes go through PATCH. Images: null = keep, non-null =
-    // REPLACE the whole set (max 2, same pipeline). updatedAt bumps via
-    // @PreUpdate.
+    // Full edit: every field incl. bloodGroup is changeable while OPEN.
+    // Status changes still go through PATCH. Images: null = keep photos,
+    // non-null = REPLACE the whole set. updatedAt bumps via @PreUpdate.
     @Transactional
     fun updateRequest(
         requesterId: Long,
         requestId: Long,
+        bloodGroup: String?,
         bags: String?,
         urgency: String?,
         hospital: String?,
@@ -213,7 +213,7 @@ class BloodRequestService(
         // ---- merge provided fields over existing, then validate the whole ----
         // (reuses the create validator, so rules can never drift apart).
         val (valid, errors) = BloodRequestValidation.validate(
-            bloodGroup = request.bloodGroup!!.label,
+            bloodGroup = bloodGroup ?: request.bloodGroup!!.label,
             bags = bags ?: request.bags.toString(),
             urgency = urgency ?: request.urgency.name,
             hospital = hospital ?: request.hospital,
@@ -248,6 +248,7 @@ class BloodRequestService(
             }
         }
 
+        request.bloodGroup = valid.bloodGroup
         request.bags = valid.bags
         request.urgency = valid.urgency
         request.hospital = valid.hospital
