@@ -11,10 +11,16 @@
  *   POST /api/auth/otp/send          → request a registration OTP
  *   POST /api/auth/otp/verify        → verify an OTP
  *   POST /api/auth/forgot-password   → request a password-reset OTP
- *   POST /api/auth/reset-password    → set a new password
+ *   POST /api/auth/forgot-password/reset → set a new password (OTP)
+ *
+ * This endpoint needs login (JWT):
+ *
+ *   POST /api/auth/change-password   → change own password
+ *                                      (current + new + confirm)
  */
 package com.smacian.backend.controller
 
+import com.smacian.backend.dto.request.ChangePasswordRequest
 import com.smacian.backend.dto.request.LoginRequest
 import com.smacian.backend.dto.request.OtpSendRequest
 import com.smacian.backend.dto.request.OtpVerifyRequest
@@ -24,6 +30,7 @@ import com.smacian.backend.dto.response.AuthResponse
 import com.smacian.backend.dto.response.LoginResponse
 import com.smacian.backend.dto.response.MessageResponse
 import com.smacian.backend.entity.enums.OtpPurpose
+import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.AuthService
 import com.smacian.backend.service.OtpService
 import jakarta.validation.Valid
@@ -98,12 +105,27 @@ class AuthController(
     }
 
     // ====================================================================
-    // 6. RESET PASSWORD - step 2: verify OTP + set new password
+    // 6. FORGOT-PASSWORD RESET - step 2: verify OTP + set new password
     // ====================================================================
+    // Renamed from POST /api/auth/reset-password so the whole OTP flow
+    // lives under the forgot-password name. No login needed (OTP proves it).
 
-    @PostMapping("/reset-password")
+    @PostMapping("/forgot-password/reset")
     fun resetPassword(@Valid @RequestBody request: ResetPasswordRequest): ResponseEntity<MessageResponse> {
         authService.resetPassword(request)
         return ResponseEntity.ok(MessageResponse(true, "Password has been updated successfully. You can now log in with your new password"))
+    }
+
+    // ====================================================================
+    // 7. CHANGE PASSWORD - logged-in user knows the current password
+    // ====================================================================
+    // JWT required (see SecurityConfig: this path is authenticated, NOT
+    // part of the public POST /api/auth/** rule). The user ID comes from
+    // the token - you can only change your OWN password.
+
+    @PostMapping("/change-password")
+    fun changePassword(@Valid @RequestBody request: ChangePasswordRequest): ResponseEntity<MessageResponse> {
+        authService.changePassword(CurrentUser.getUserId(), request)
+        return ResponseEntity.ok(MessageResponse(true, "Password changed successfully"))
     }
 }

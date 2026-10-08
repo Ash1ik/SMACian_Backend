@@ -14,6 +14,7 @@
  */
 package com.smacian.backend.service
 
+import com.smacian.backend.dto.request.ChangePasswordRequest
 import com.smacian.backend.dto.request.LoginRequest
 import com.smacian.backend.dto.request.RegisterRequest
 import com.smacian.backend.dto.request.ResetPasswordRequest
@@ -197,6 +198,44 @@ class AuthService(
         // ---- c. Find user ----
         val user = findByContact(contact).orElseThrow {
             ResourceNotFoundException("No account found with this contact")
+        }
+
+        // ---- d. Update the password hash ----
+        user.passwordHash = passwordEncoder.encode(request.newPassword)
+        userRepository.save(user)
+    }
+
+    // ====================================================================
+    // 4b. CHANGE PASSWORD - logged-in user, knows current password
+    // ====================================================================
+    /*
+     * Unlike resetPassword (OTP, no login), this requires the JWT AND the
+     * current password. 400 (not 401) on a wrong current password - the
+     * caller IS authenticated, only the input is wrong.
+     *
+     * NOTE: stateless JWTs can't be revoked: other sessions stay valid
+     * until their 24h expiry. Document, don't solve, at this scale.
+     */
+    @Transactional
+    fun changePassword(userId: Long, request: ChangePasswordRequest) {
+
+        val user = userRepository.findById(userId).orElseThrow {
+            ResourceNotFoundException("User account not found")
+        }
+
+        // ---- a. Prove knowledge of the current password ----
+        if (!passwordEncoder.matches(request.currentPassword, user.passwordHash)) {
+            throw BadRequestException("Current password is incorrect")
+        }
+
+        // ---- b. New passwords must match ----
+        if (request.newPassword != request.confirmPassword) {
+            throw BadRequestException("New password and confirmation do not match")
+        }
+
+        // ---- c. Refuse a no-op change (same password, new hash or not) ----
+        if (passwordEncoder.matches(request.newPassword, user.passwordHash)) {
+            throw BadRequestException("New password must be different from the current password")
         }
 
         // ---- d. Update the password hash ----

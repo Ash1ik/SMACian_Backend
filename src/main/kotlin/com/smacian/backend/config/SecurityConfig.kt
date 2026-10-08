@@ -58,6 +58,10 @@ class SecurityConfig(
             // 5. Authorization rules
             .authorizeHttpRequests { auth ->
                 auth
+                    // Change-password needs a JWT even though it lives under
+                    // /api/auth/**. FIRST match wins, so this must stay ABOVE
+                    // the public POST /api/auth/** rule below.
+                    .requestMatchers(HttpMethod.POST, "/api/auth/change-password").authenticated()
                     // PUBLIC endpoints (no login required)
                     .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
                     .requestMatchers("/api/terms", "/api/privacy").permitAll()
