@@ -55,6 +55,12 @@ dependencies {
     // PostgreSQL driver - the library that allows Kotlin/Java to talk to PostgreSQL.
     runtimeOnly 'org.postgresql:postgresql'
 
+    // ====== Database migrations (Flyway) ======
+    // New tables ship as versioned SQL (db/migration) instead of relying
+    // on ddl-auto. baseline-on-migrate absorbs pre-existing databases.
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+
     // ====== Security & Authentication ======
     // spring-boot-starter-security protects our API and handles login/authentication.
     implementation 'org.springframework.boot:spring-boot-starter-security'
