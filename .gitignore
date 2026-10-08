@@ -29,8 +29,8 @@ bin/
 # ======================================================
 .env
 application-local.yml
+# local-run.ps1 holds REAL secrets (DB password, Brevo key) - NEVER track it.
 local-run.ps1
-local-db-start.ps1
 
 # ======================================================
 # Local PostgreSQL (portable dev database)
