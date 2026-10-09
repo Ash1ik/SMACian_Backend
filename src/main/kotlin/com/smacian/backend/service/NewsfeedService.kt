@@ -23,6 +23,7 @@ import com.smacian.backend.entity.Comment
 import com.smacian.backend.entity.Post
 import com.smacian.backend.entity.PostImage
 import com.smacian.backend.entity.PostLike
+import com.smacian.backend.entity.enums.NotificationType
 import com.smacian.backend.exception.BadRequestException
 import com.smacian.backend.exception.ForbiddenException
 import com.smacian.backend.exception.ResourceNotFoundException
@@ -49,6 +50,7 @@ class NewsfeedService(
     private val postLikeRepository: PostLikeRepository,
     private val commentRepository: CommentRepository,
     private val userRepository: UserRepository,
+    private val notificationService: NotificationService,
     transactionManager: PlatformTransactionManager
 ) {
 
@@ -405,13 +407,13 @@ class NewsfeedService(
         val post = getPostById(postId)
 
         if (!postLikeRepository.existsByPostIdAndUserId(postId, userId)) {
-            if (!userRepository.existsById(userId)) {
-                throw ResourceNotFoundException("User not found")
-            }
+            val liker = userRepository.findById(userId)
+                .orElseThrow { ResourceNotFoundException("User not found") }
             // Insert in its OWN transaction using ID-only references: on a
             // lost race (concurrent double-like) only the inner tx rolls
             // back (Postgres aborts on constraint violation) while the
             // outer one stays usable - we fall through as "liked".
+            var isNewLike = false
             try {
                 newTx.executeWithoutResult {
                     val like = PostLike().apply {
@@ -420,8 +422,23 @@ class NewsfeedService(
                     }
                     postLikeRepository.saveAndFlush(like)
                 }
+                isNewLike = true
             } catch (e: DataIntegrityViolationException) {
                 // lost the race - the other request already liked
+            }
+            // Notify the author (never for self-likes). Only on NEW likes -
+            // repeat taps and lost races are silent.
+            if (isNewLike) {
+                val authorId = post.author!!.id!!
+                if (authorId != userId) {
+                    notificationService.notify(
+                        authorId,
+                        NotificationType.LIKE,
+                        "${liker.fullName} liked your post",
+                        "${liker.fullName} liked your post.",
+                        postId
+                    )
+                }
             }
         }
 
@@ -466,6 +483,7 @@ class NewsfeedService(
 
         // Flatten: a reshare always points at the ultimate original.
         val original = post.sharedFrom ?: post
+        val originalId = original.id!!
 
         val cleanContent = content?.trim()?.takeIf { it.isNotEmpty() }
         if (cleanContent != null && cleanContent.length > MAX_CONTENT_LENGTH) {
@@ -480,7 +498,22 @@ class NewsfeedService(
             this.content = cleanContent
             this.sharedFrom = original
         }
-        return toPostResponse(postRepository.save(reshare), userId)
+        val savedReshare = postRepository.save(reshare)
+
+        // Notify the ORIGINAL's author (never for self-shares).
+        // referenceId = the original (stable even if the reshare is deleted).
+        val originalAuthorId = original.author!!.id!!
+        if (originalAuthorId != userId) {
+            notificationService.notify(
+                originalAuthorId,
+                NotificationType.SHARE,
+                "${user.fullName} shared your post",
+                "${user.fullName} shared your post.",
+                originalId
+            )
+        }
+
+        return toPostResponse(savedReshare, userId)
     }
 
     // ====================================================================
@@ -516,8 +549,35 @@ class NewsfeedService(
             this.parent = parent
             this.content = cleanContent
         }
+        val saved = commentRepository.save(comment)
 
-        return CommentResponse.fromEntity(commentRepository.save(comment))
+        // Notify: top-level -> post author; reply -> parent comment author.
+        // Never for self-actions.
+        if (parent == null) {
+            val postAuthorId = post.author!!.id!!
+            if (postAuthorId != authorId) {
+                notificationService.notify(
+                    postAuthorId,
+                    NotificationType.COMMENT,
+                    "${author.fullName} commented on your post",
+                    cleanContent.take(200),
+                    postId
+                )
+            }
+        } else {
+            val parentAuthorId = parent.author!!.id!!
+            if (parentAuthorId != authorId) {
+                notificationService.notify(
+                    parentAuthorId,
+                    NotificationType.REPLY,
+                    "${author.fullName} replied to your comment",
+                    cleanContent.take(200),
+                    postId
+                )
+            }
+        }
+
+        return CommentResponse.fromEntity(saved)
     }
 
     // ====================================================================

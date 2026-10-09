@@ -87,4 +87,11 @@ interface UserRepository : JpaRepository<User, Long> {
         @Param("bg") bloodGroup: BloodGroup?,
         pageable: Pageable
     ): Page<PeopleListItemResponse>
+
+    /*
+     * IDs of all active users except one - notification fan-out.
+     * IDs only (no entities, no BYTEA) by design.
+     */
+    @Query("SELECT u.id FROM User u WHERE u.isActive = true AND u.id <> :excludedId")
+    fun findActiveUserIdsExcept(@Param("excludedId") excludedId: Long): List<Long>
 }

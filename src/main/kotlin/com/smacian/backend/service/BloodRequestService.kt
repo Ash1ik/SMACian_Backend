@@ -23,6 +23,7 @@ import com.smacian.backend.dto.response.PagedResponse
 import com.smacian.backend.dto.response.PostImageResponse
 import com.smacian.backend.entity.BloodRequest
 import com.smacian.backend.entity.BloodRequestImage
+import com.smacian.backend.entity.enums.NotificationType
 import com.smacian.backend.entity.enums.BloodGroup
 import com.smacian.backend.entity.enums.BloodRequestStatus
 import com.smacian.backend.entity.enums.Urgency
@@ -47,7 +48,8 @@ import java.time.LocalDateTime
 class BloodRequestService(
     private val bloodRequestRepository: BloodRequestRepository,
     private val bloodRequestImageRepository: BloodRequestImageRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val notificationService: NotificationService
 ) {
 
     companion object {
@@ -119,6 +121,16 @@ class BloodRequestService(
             }
             bloodRequestImageRepository.save(image)
         }
+
+        // Fan-out to EVERY active user except the requester (product call:
+        // blood need is urgent for all). One row per recipient, same tx.
+        notificationService.notifyAllExcept(
+            requesterId,
+            NotificationType.BLOOD_MATCH,
+            "Blood needed: ${valid.bloodGroup.label} (${valid.bags} bags)",
+            "${valid.urgency.name} request at ${valid.hospital}, ${valid.location}. Needed by ${valid.neededBy}.",
+            saved.id!!
+        )
 
         return toResponse(saved)
     }
