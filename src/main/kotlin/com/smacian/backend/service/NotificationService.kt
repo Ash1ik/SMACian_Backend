@@ -34,18 +34,22 @@ class NotificationService(
     // ====================================================================
 
     // One notification to one user. No-op when recipient doesn't exist
-    // (defensive - callers normally pass known IDs).
+    // (defensive - callers normally pass known IDs). actorId = the user
+    // who triggered it (shown as the avatar); null = "Someone".
     @Transactional
     fun notify(
         recipientId: Long,
         type: NotificationType,
         title: String,
         body: String,
-        referenceId: Long?
+        referenceId: Long?,
+        actorId: Long? = null
     ) {
         val recipient = userRepository.findById(recipientId).orElse(null) ?: return
+        val actor = actorId?.let { userRepository.findById(it).orElse(null) }
         val notification = Notification().apply {
             this.recipient = recipient
+            this.actor = actor
             this.type = type
             this.title = title.take(200)
             this.body = body.take(500)
@@ -57,19 +61,23 @@ class NotificationService(
 
     // One notification to EVERY active user except one (blood-request fan-out).
     // IDs first (no BYTEA), then one saveAll - ~500 rows is trivial.
+    // Same single actor for all rows (the requester).
     @Transactional
     fun notifyAllExcept(
         excludedUserId: Long,
         type: NotificationType,
         title: String,
         body: String,
-        referenceId: Long?
+        referenceId: Long?,
+        actorId: Long? = null
     ): Int {
         val ids = userRepository.findActiveUserIdsExcept(excludedUserId)
         if (ids.isEmpty()) return 0
+        val actor = actorId?.let { userRepository.getReferenceById(it) }
         val rows = ids.map { id ->
             Notification().apply {
                 this.recipient = userRepository.getReferenceById(id)
+                this.actor = actor
                 this.type = type
                 this.title = title.take(200)
                 this.body = body.take(500)

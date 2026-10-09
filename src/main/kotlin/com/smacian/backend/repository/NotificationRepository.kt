@@ -17,10 +17,11 @@ interface NotificationRepository : JpaRepository<Notification, Long> {
 
     /*
      * One user's notifications, newest first. Pass a Pageable WITHOUT sort
-     * (ordering is fixed in the query).
+     * (ordering is fixed in the query). Recipient is JOIN FETCHed; actor is
+     * LEFT JOIN FETCHed (nullable - inner join would drop legacy rows).
      */
     @Query(
-        value = "SELECT n FROM Notification n JOIN FETCH n.recipient WHERE n.recipient.id = :userId ORDER BY n.createdAt DESC",
+        value = "SELECT n FROM Notification n JOIN FETCH n.recipient LEFT JOIN FETCH n.actor WHERE n.recipient.id = :userId ORDER BY n.createdAt DESC",
         countQuery = "SELECT COUNT(n) FROM Notification n WHERE n.recipient.id = :userId"
     )
     fun findByRecipient(@Param("userId") userId: Long, pageable: Pageable): Page<Notification>

@@ -436,7 +436,8 @@ class NewsfeedService(
                         NotificationType.LIKE,
                         "${liker.fullName} liked your post",
                         "${liker.fullName} liked your post.",
-                        postId
+                        postId,
+                        actorId = userId
                     )
                 }
             }
@@ -509,7 +510,8 @@ class NewsfeedService(
                 NotificationType.SHARE,
                 "${user.fullName} shared your post",
                 "${user.fullName} shared your post.",
-                originalId
+                originalId,
+                actorId = userId
             )
         }
 
@@ -561,7 +563,8 @@ class NewsfeedService(
                     NotificationType.COMMENT,
                     "${author.fullName} commented on your post",
                     cleanContent.take(200),
-                    postId
+                    postId,
+                    actorId = authorId
                 )
             }
         } else {
@@ -572,7 +575,8 @@ class NewsfeedService(
                     NotificationType.REPLY,
                     "${author.fullName} replied to your comment",
                     cleanContent.take(200),
-                    postId
+                    postId,
+                    actorId = authorId
                 )
             }
         }

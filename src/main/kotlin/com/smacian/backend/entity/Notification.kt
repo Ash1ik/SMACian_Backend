@@ -36,6 +36,14 @@ class Notification {
     @OnDelete(action = OnDeleteAction.CASCADE)
     var recipient: User? = null
 
+    // The user who TRIGGERED this (liker, commenter, sharer, requester).
+    // Nullable: legacy rows predate the column (shown as "Someone").
+    // Actor deletion NULLs it (SET NULL) - the notification survives.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
+    var actor: User? = null
+
     @field:Column(name = "type", nullable = false, length = 20)
     @Enumerated(EnumType.STRING)
     var type: NotificationType = NotificationType.LIKE

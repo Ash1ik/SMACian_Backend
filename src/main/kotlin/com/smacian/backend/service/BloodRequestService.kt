@@ -124,12 +124,14 @@ class BloodRequestService(
 
         // Fan-out to EVERY active user except the requester (product call:
         // blood need is urgent for all). One row per recipient, same tx.
+        // Actor = the requester (avatar on every row).
         notificationService.notifyAllExcept(
             requesterId,
             NotificationType.BLOOD_MATCH,
             "Blood needed: ${valid.bloodGroup.label} (${valid.bags} bags)",
             "${valid.urgency.name} request at ${valid.hospital}, ${valid.location}. Needed by ${valid.neededBy}.",
-            saved.id!!
+            saved.id!!,
+            actorId = requesterId
         )
 
         return toResponse(saved)
