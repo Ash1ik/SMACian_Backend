@@ -35,7 +35,8 @@ import java.time.LocalDateTime
 @Service
 class OtpService(
     private val otpCodeRepository: OtpCodeRepository,
-    private val emailService: EmailService
+    private val emailService: EmailService,
+    private val smsService: SmsService
 ) {
 
     private val log = LoggerFactory.getLogger(OtpService::class.java)
@@ -178,9 +179,8 @@ class OtpService(
     }
 
     /*
-     * The real "sending" logic.
-     * Email contacts get the code delivered by Brevo; phone numbers are
-     * logged to the console until an SMS provider is added.
+     * The real "sending" logic. Runs AFTER the DB commit (see sendOtp).
+     * Email contacts get the code via Brevo; phone contacts via Twilio SMS.
      */
     private fun deliverOtp(contact: String, code: String) {
         // NOTE: the code itself is NEVER logged at INFO - logs are not a
@@ -189,9 +189,11 @@ class OtpService(
         log.debug("OTP code for {} : {}", contact, code)
         log.info("Delivering OTP to {}", contact)
 
-        // Email contacts -> real delivery via Brevo. Phones stay console-only for now.
+        // Email contacts -> real delivery via Brevo; phones -> Twilio SMS.
         if (ContactUtils.isEmail(contact)) {
             emailService.sendOtpEmail(contact, code)
+        } else {
+            smsService.sendOtpSms(contact, code)
         }
     }
 
