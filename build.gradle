@@ -81,6 +81,14 @@ dependencies {
     // Cloudinary stores user profile photos and cover photos in the cloud.
     implementation 'com.cloudinary:cloudinary-http5:2.4.0'
 
+    // ====== Firebase Cloud Messaging (push notifications) ======
+    // Server SDK for FCM HTTP v1 (blood-request pushes only for now).
+    // commons-logging excluded: it clashes with Spring's spring-jcl
+    // (breaks logging discovery at boot).
+    implementation('com.google.firebase:firebase-admin:9.4.0') {
+        exclude group: 'commons-logging', module: 'commons-logging'
+    }
+
     // ====== API Documentation (Swagger UI) ======
     // springdoc-openapi auto-generates OpenAPI docs from our controllers
     // and serves the interactive Swagger UI at /swagger-ui.html

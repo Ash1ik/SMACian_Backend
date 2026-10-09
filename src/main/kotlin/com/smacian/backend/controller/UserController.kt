@@ -17,9 +17,12 @@
  */
 package com.smacian.backend.controller
 
+import com.smacian.backend.dto.request.FcmTokenRequest
 import com.smacian.backend.dto.request.UpdateProfileRequestExtended
+import com.smacian.backend.dto.response.MessageResponse
 import com.smacian.backend.dto.response.UserResponse
 import com.smacian.backend.security.CurrentUser
+import com.smacian.backend.service.DeviceService
 import com.smacian.backend.service.UserService
 import com.smacian.backend.util.HttpCache.matchesEtag
 import jakarta.validation.Valid
@@ -43,7 +46,8 @@ import org.springframework.web.multipart.MultipartFile
 @RestController
 @RequestMapping("/api/user")
 class UserController(
-    private val userService: UserService
+    private val userService: UserService,
+    private val deviceService: DeviceService
 ) {
 
     // ====================================================================
@@ -172,5 +176,29 @@ class UserController(
             .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
         if (etag != null) body.eTag(etag)
         return body.body(data)
+    }
+
+    // ====================================================================
+    // 9. REGISTER FCM PUSH TOKEN (my device, JWT)
+    // ====================================================================
+    // The app POSTs its current FCM token on every login (idempotent).
+    // Re-login on a shared device reassigns the token to the new user.
+
+    @PostMapping("/fcm-token")
+    fun registerFcmToken(@RequestBody request: FcmTokenRequest): ResponseEntity<MessageResponse> {
+        deviceService.registerToken(CurrentUser.getUserId(), request.token)
+        return ResponseEntity.ok(MessageResponse(true, "Push token registered"))
+    }
+
+    // ====================================================================
+    // 10. UNREGISTER FCM PUSH TOKEN (logout, JWT)
+    // ====================================================================
+    // Deletes MY row for this token so a signed-out device stops receiving
+    // my pushes. Unknown token = still success (idempotent).
+
+    @DeleteMapping("/fcm-token")
+    fun unregisterFcmToken(@RequestBody request: FcmTokenRequest): ResponseEntity<Void> {
+        deviceService.unregisterToken(CurrentUser.getUserId(), request.token)
+        return ResponseEntity.noContent().build()
     }
 }

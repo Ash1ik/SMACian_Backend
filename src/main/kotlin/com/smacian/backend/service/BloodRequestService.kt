@@ -36,9 +36,12 @@ import com.smacian.backend.repository.BloodRequestRepository
 import com.smacian.backend.repository.UserRepository
 import com.smacian.backend.util.BloodRequestValidation
 import com.smacian.backend.util.ImageProcessing
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder
 import java.time.LocalDate
@@ -49,8 +52,11 @@ class BloodRequestService(
     private val bloodRequestRepository: BloodRequestRepository,
     private val bloodRequestImageRepository: BloodRequestImageRepository,
     private val userRepository: UserRepository,
-    private val notificationService: NotificationService
+    private val notificationService: NotificationService,
+    private val pushService: PushService
 ) {
+
+    private val log = LoggerFactory.getLogger(BloodRequestService::class.java)
 
     companion object {
         const val MAX_IMAGES_PER_REQUEST = 2
@@ -123,15 +129,31 @@ class BloodRequestService(
         }
 
         // Fan-out to EVERY active user except the requester (product call:
-        // blood need is urgent for all). One row per recipient, same tx.
+        // blood need is urgent for all). Inbox rows now (same tx), the
+        // FCM push after commit (external HTTPS must never hold the pool).
         // Actor = the requester (avatar on every row).
+        val pushTitle = "Blood needed: ${valid.bloodGroup.label} (${valid.bags} bags)"
+        val pushBody =
+            "${valid.urgency.name} request at ${valid.hospital}, ${valid.location}. Needed by ${valid.neededBy}."
         notificationService.notifyAllExcept(
             requesterId,
             NotificationType.BLOOD_MATCH,
-            "Blood needed: ${valid.bloodGroup.label} (${valid.bags} bags)",
-            "${valid.urgency.name} request at ${valid.hospital}, ${valid.location}. Needed by ${valid.neededBy}.",
+            pushTitle,
+            pushBody,
             saved.id!!,
             actorId = requesterId
+        )
+        val requestId = saved.id!!
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        pushService.pushBloodRequestToAllExcept(requesterId, pushTitle, pushBody, requestId)
+                    } catch (e: Exception) {
+                        log.error("Post-commit FCM push failed for blood request {}", requestId, e)
+                    }
+                }
+            }
         )
 
         return toResponse(saved)
