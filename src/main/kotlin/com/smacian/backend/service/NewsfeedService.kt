@@ -33,12 +33,15 @@ import com.smacian.backend.repository.PostLikeRepository
 import com.smacian.backend.repository.PostRepository
 import com.smacian.backend.repository.UserRepository
 import com.smacian.backend.util.ImageProcessing
+import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder
@@ -51,8 +54,11 @@ class NewsfeedService(
     private val commentRepository: CommentRepository,
     private val userRepository: UserRepository,
     private val notificationService: NotificationService,
+    private val pushService: PushService,
     transactionManager: PlatformTransactionManager
 ) {
+
+    private val log = LoggerFactory.getLogger(NewsfeedService::class.java)
 
     // Runs the like INSERT in its own transaction (see likePost): on a lost
     // race only the inner tx rolls back and the outer one stays usable.
@@ -119,6 +125,24 @@ class NewsfeedService(
             }
             postImageRepository.save(image)
         }
+
+        // Push fan-out after commit (external HTTPS never inside the tx):
+        // everyone except me gets pinged about the new post.
+        val postId = savedPost.id!!
+        val pushTitle = "${author.fullName} shared a new post"
+        val pushBody = cleanContent?.take(120)
+            ?: if (processed.size == 1) "Shared a photo." else "Shared ${processed.size} photos."
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        pushService.pushNewPostToAllExcept(authorId, pushTitle, pushBody, postId)
+                    } catch (e: Exception) {
+                        log.error("Post-commit FCM push failed for new post {}", postId, e)
+                    }
+                }
+            }
+        )
 
         return toPostResponse(savedPost, authorId)
     }
@@ -427,17 +451,34 @@ class NewsfeedService(
                 // lost the race - the other request already liked
             }
             // Notify the author (never for self-likes). Only on NEW likes -
-            // repeat taps and lost races are silent.
+            // repeat taps and lost races are silent. Push mirrors the inbox
+            // row, after commit.
             if (isNewLike) {
                 val authorId = post.author!!.id!!
                 if (authorId != userId) {
+                    val likeTitle = "${liker.fullName} liked your post"
                     notificationService.notify(
                         authorId,
                         NotificationType.LIKE,
-                        "${liker.fullName} liked your post",
+                        likeTitle,
                         "${liker.fullName} liked your post.",
                         postId,
                         actorId = userId
+                    )
+                    TransactionSynchronizationManager.registerSynchronization(
+                        object : TransactionSynchronization {
+                            override fun afterCommit() {
+                                try {
+                                    pushService.pushToUser(
+                                        authorId, likeTitle,
+                                        "${liker.fullName} liked your post.",
+                                        NotificationType.LIKE, postId
+                                    )
+                                } catch (e: Exception) {
+                                    log.error("Post-commit FCM push failed for like on post {}", postId, e)
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -503,15 +544,32 @@ class NewsfeedService(
 
         // Notify the ORIGINAL's author (never for self-shares).
         // referenceId = the original (stable even if the reshare is deleted).
+        // Push mirrors the inbox row, after commit.
         val originalAuthorId = original.author!!.id!!
         if (originalAuthorId != userId) {
+            val shareTitle = "${user.fullName} shared your post"
             notificationService.notify(
                 originalAuthorId,
                 NotificationType.SHARE,
-                "${user.fullName} shared your post",
+                shareTitle,
                 "${user.fullName} shared your post.",
                 originalId,
                 actorId = userId
+            )
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        try {
+                            pushService.pushToUser(
+                                originalAuthorId, shareTitle,
+                                "${user.fullName} shared your post.",
+                                NotificationType.SHARE, originalId
+                            )
+                        } catch (e: Exception) {
+                            log.error("Post-commit FCM push failed for share of post {}", originalId, e)
+                        }
+                    }
+                }
             )
         }
 
@@ -554,8 +612,8 @@ class NewsfeedService(
         val saved = commentRepository.save(comment)
 
         // Notify: top-level -> post author; reply -> parent comment author.
-        // Never for self-actions.
-        if (parent == null) {
+        // Never for self-actions. Push mirrors the inbox row, after commit.
+        val pushTarget = if (parent == null) {
             val postAuthorId = post.author!!.id!!
             if (postAuthorId != authorId) {
                 notificationService.notify(
@@ -566,7 +624,8 @@ class NewsfeedService(
                     postId,
                     actorId = authorId
                 )
-            }
+                Triple(postAuthorId, "${author.fullName} commented on your post", NotificationType.COMMENT)
+            } else null
         } else {
             val parentAuthorId = parent.author!!.id!!
             if (parentAuthorId != authorId) {
@@ -578,7 +637,23 @@ class NewsfeedService(
                     postId,
                     actorId = authorId
                 )
-            }
+                Triple(parentAuthorId, "${author.fullName} replied to your comment", NotificationType.REPLY)
+            } else null
+        }
+        if (pushTarget != null) {
+            val (targetId, pushTitle, pushType) = pushTarget
+            val pushBody = cleanContent.take(200)
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        try {
+                            pushService.pushToUser(targetId, pushTitle, pushBody, pushType, postId)
+                        } catch (e: Exception) {
+                            log.error("Post-commit FCM push failed for comment on post {}", postId, e)
+                        }
+                    }
+                }
+            )
         }
 
         return CommentResponse.fromEntity(saved)

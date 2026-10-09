@@ -1,5 +1,9 @@
 /*
- * PushService - Sends FCM push notifications (blood requests only, for now).
+ * PushService - Sends FCM push notifications.
+ *
+ * Current push scope (product calls): new posts, likes, comments, replies,
+ * shares, blood requests. Inbox rows cover like/comment/reply/share/blood;
+ * new-post pushes are push-ONLY (the feed itself is the inbox for posts).
  *
  * FirebaseMessaging is injected via ObjectProvider: when no key is
  * configured the bean doesn't exist and every send is a logged no-op
@@ -10,7 +14,7 @@
  * INVALID_ARGUMENT) are pruned so the table never rots.
  *
  * CALLERS MUST invoke from after-commit (external HTTPS, never inside the
- * DB transaction) - see BloodRequestService.createRequest.
+ * DB transaction) - see NewsfeedService/BloodRequestService.
  */
 package com.smacian.backend.service
 
@@ -19,6 +23,7 @@ import com.google.firebase.messaging.FirebaseMessagingException
 import com.google.firebase.messaging.MessagingErrorCode
 import com.google.firebase.messaging.MulticastMessage
 import com.google.firebase.messaging.Notification
+import com.smacian.backend.entity.enums.NotificationType
 import com.smacian.backend.repository.UserDeviceRepository
 import com.smacian.backend.repository.UserRepository
 import org.slf4j.LoggerFactory
@@ -52,26 +57,57 @@ class PushService(
         body: String,
         bloodRequestId: Long
     ) {
-        pushBloodRequest(userRepository.findActiveUserIdsExcept(excludedUserId), title, body, bloodRequestId)
+        pushToUsers(
+            userRepository.findActiveUserIdsExcept(excludedUserId),
+            title, body, NotificationType.BLOOD_MATCH, bloodRequestId
+        )
     }
 
     /*
-     * Push a blood request to the given users' devices. userIds = inbox
-     * fan-out set (requester already excluded by the caller).
-     * data carries type+referenceId so the app can deep-link on tap.
-     * Runs in its OWN transaction (callers invoke after-commit, outside any
-     * tx) for the token lookup + dead-token pruning.
+     * Single-recipient push (like/comment/reply/share). Own transaction.
      */
     @Transactional
-    fun pushBloodRequest(
+    fun pushToUser(
+        userId: Long,
+        title: String,
+        body: String,
+        type: NotificationType,
+        referenceId: Long
+    ) {
+        pushToUsers(listOf(userId), title, body, type, referenceId)
+    }
+
+    /*
+     * New-post fan-out: everyone except the author. Own transaction.
+     */
+    @Transactional
+    fun pushNewPostToAllExcept(
+        excludedUserId: Long,
+        title: String,
+        body: String,
+        postId: Long
+    ) {
+        pushToUsers(
+            userRepository.findActiveUserIdsExcept(excludedUserId),
+            title, body, NotificationType.POST_CREATED, postId
+        )
+    }
+
+    /*
+     * Core sender: tokens in ONE query, 500/chunk multicast, dead-token
+     * pruning. data carries type+referenceId so the app can deep-link.
+     */
+    @Transactional
+    fun pushToUsers(
         userIds: List<Long>,
         title: String,
         body: String,
-        bloodRequestId: Long
+        type: NotificationType,
+        referenceId: Long
     ) {
         val messaging = messagingProvider.getIfAvailable()
         if (messaging == null) {
-            log.warn("FCM not configured (FIREBASE_KEY_PATH unset) - skipping push for blood request {}", bloodRequestId)
+            log.warn("FCM not configured (FIREBASE_KEY_PATH unset) - skipping {} push for {}", type, referenceId)
             return
         }
         if (userIds.isEmpty()) return
@@ -79,15 +115,15 @@ class PushService(
         val tokens = try {
             deviceRepository.findFcmTokensByUserIds(userIds)
         } catch (e: Exception) {
-            log.error("Push aborted: token lookup failed for blood request {}", bloodRequestId, e)
+            log.error("Push aborted: token lookup failed for {} {}", type, referenceId, e)
             return
         }
         if (tokens.isEmpty()) {
-            log.info("Push skipped: no registered devices for blood request {}", bloodRequestId)
+            log.info("Push skipped: no registered devices for {} {}", type, referenceId)
             return
         }
 
-        val data = mapOf("type" to "BLOOD_MATCH", "referenceId" to bloodRequestId.toString())
+        val data = mapOf("type" to type.name, "referenceId" to referenceId.toString())
         var sent = 0
         tokens.chunked(500).forEach { chunk ->
             val message = MulticastMessage.builder()
@@ -102,10 +138,10 @@ class PushService(
                 sent += response.successCount
                 pruneDeadTokens(chunk, response)
             } catch (e: FirebaseMessagingException) {
-                log.error("FCM multicast failed for blood request {}", bloodRequestId, e)
+                log.error("FCM multicast failed for {} {}", type, referenceId, e)
             }
         }
-        log.info("Push done for blood request {}: {}/{} delivered", bloodRequestId, sent, tokens.size)
+        log.info("Push done for {} {}: {}/{} delivered", type, referenceId, sent, tokens.size)
     }
 
     // Deletes tokens FCM reports as permanently dead (stale app installs).
