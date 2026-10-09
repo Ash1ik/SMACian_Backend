@@ -58,7 +58,9 @@ interface UserRepository : JpaRepository<User, Long> {
     /*
      * People search: case-insensitive ILIKE on full name OR designation,
      * plus an optional exact blood-group filter (null = all groups).
-     * Only active users are returned; sorted by updatedAt desc (via Pageable sort).
+     * Only active users are returned. Ordering: the VIEWER first, then
+     * everyone else by updatedAt desc (pass a Pageable WITHOUT sort -
+     * ordering is fixed here).
      *
      * Projection (SELECT NEW ...) fetches ONLY the 5 displayed columns -
      * profile/cover photo BYTEA blobs are never loaded for list rows.
@@ -73,7 +75,7 @@ interface UserRepository : JpaRepository<User, Long> {
             "  :q = '' " +
             "  OR lower(concat(u.firstName, ' ', u.lastName)) LIKE lower(concat('%', :q, '%')) " +
             "  OR lower(coalesce(u.designation, '')) LIKE lower(concat('%', :q, '%'))" +
-            ")",
+            ") ORDER BY CASE WHEN u.id = :me THEN 0 ELSE 1 END, u.updatedAt DESC",
         countQuery = "SELECT COUNT(u) FROM User u " +
             "WHERE u.isActive = true " +
             "AND (:bg IS NULL OR u.bloodGroup = :bg) AND (" +
@@ -85,6 +87,7 @@ interface UserRepository : JpaRepository<User, Long> {
     fun searchPeople(
         @Param("q") q: String,
         @Param("bg") bloodGroup: BloodGroup?,
+        @Param("me") viewerId: Long,
         pageable: Pageable
     ): Page<PeopleListItemResponse>
 

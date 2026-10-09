@@ -12,6 +12,7 @@ package com.smacian.backend.controller
 import com.smacian.backend.dto.response.PagedResponse
 import com.smacian.backend.dto.response.PeopleListItemResponse
 import com.smacian.backend.dto.response.PublicUserResponse
+import com.smacian.backend.security.CurrentUser
 import com.smacian.backend.service.UserService
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -30,7 +31,8 @@ class PeopleController(
     // ====================================================================
     // Case-insensitive match on full name OR designation, plus an optional
     // exact blood-group filter ("A+", "o-", "A_POSITIVE" ...; garbage = 400).
-    // Sorted by updatedAt desc. Returns with a default empty query = first 20.
+    // The VIEWER's own row always comes first, then updatedAt desc.
+    // Returns with a default empty query = first 20.
 
     @GetMapping
     fun searchPeople(
@@ -39,7 +41,7 @@ class PeopleController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = "20") size: Int
     ): PagedResponse<PeopleListItemResponse> =
-        userService.searchPeople(search ?: "", bloodGroup, page, size)
+        userService.searchPeople(CurrentUser.getUserId(), search ?: "", bloodGroup, page, size)
 
     // ====================================================================
     // 2. PUBLIC PROFILE - GET /api/users/{id}

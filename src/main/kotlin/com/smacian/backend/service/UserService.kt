@@ -40,7 +40,6 @@ import com.smacian.backend.repository.UserExperienceRepository
 import com.smacian.backend.repository.UserRepository
 import com.smacian.backend.util.ProfileValidation
 import org.springframework.data.domain.PageRequest
-import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.multipart.MultipartFile
@@ -258,6 +257,7 @@ class UserService(
     // ====================================================================
     @Transactional(readOnly = true)
     fun searchPeople(
+        viewerId: Long,
         query: String,
         bloodGroup: String?,
         page: Int,
@@ -278,8 +278,8 @@ class UserService(
                 )
         }
 
-        val pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "updatedAt"))
-        val result = userRepository.searchPeople(cleanQuery, bg, pageable)
+        val pageable = PageRequest.of(safePage, safeSize)
+        val result = userRepository.searchPeople(cleanQuery, bg, viewerId, pageable)
 
         // Repository already returns PeopleListItemResponse (projection -
         // no mapping step, no BYTEA loaded).
