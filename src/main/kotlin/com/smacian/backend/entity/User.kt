@@ -18,6 +18,7 @@ package com.smacian.backend.entity
 import com.smacian.backend.entity.enums.BloodGroup
 import com.smacian.backend.entity.enums.Gender
 import com.smacian.backend.entity.enums.RelationshipStatus
+import com.smacian.backend.entity.enums.Role
 import jakarta.persistence.*
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
@@ -149,6 +150,12 @@ class User {
 
     @field:Column(name = "is_active", nullable = false)
     var isActive: Boolean = true
+
+    // Privilege level (USER / ADMIN). Defaults to USER; the seeder promotes
+    // the first admin. Granted as ROLE_* per request in JwtAuthenticationFilter.
+    @field:Column(name = "role", nullable = false, length = 10)
+    @Enumerated(EnumType.STRING)
+    var role: Role = Role.USER
 
     // ==================== Terms & Conditions ====================
 

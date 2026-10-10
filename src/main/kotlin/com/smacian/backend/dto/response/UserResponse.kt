@@ -32,6 +32,8 @@ data class UserResponse(
     val profilePhotoUrl: String?,
     val coverPhotoUrl: String?,
     val isActive: Boolean,
+    // "USER" or "ADMIN" - the app shows admin UI when ADMIN.
+    val role: String,
 
     // ==================== Extended Profile Fields (nullable) ====================
     val designation: String? = null,
@@ -68,6 +70,7 @@ data class UserResponse(
                 profilePhotoUrl = user.profilePhotoUrl,
                 coverPhotoUrl = user.coverPhotoUrl,
                 isActive = user.isActive,
+                role = user.role.name,
                 designation = user.designation,
                 bio = user.bio,
                 location = user.location,

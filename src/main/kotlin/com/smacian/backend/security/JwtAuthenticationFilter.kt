@@ -79,10 +79,11 @@ class JwtAuthenticationFilter(
             if (user != null && user.isActive && SecurityContextHolder.getContext().authentication == null) {
 
                 // Build Spring's UserDetails object.
-                // We store the user ID as the "username".
+                // We store the user ID as the "username" and grant the
+                // role from the DB (ROLE_USER / ROLE_ADMIN for @PreAuthorize).
                 val userDetails = User.withUsername(user.id.toString())
                     .password(user.passwordHash)
-                    .authorities("ROLE_USER")
+                    .authorities("ROLE_" + user.role.name)
                     .build()
 
                 val authToken = UsernamePasswordAuthenticationToken(
