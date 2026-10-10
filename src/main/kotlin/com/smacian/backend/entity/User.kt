@@ -27,10 +27,13 @@ import java.time.LocalDateTime
 @Entity
 @Table(
     name = "users",
-    // Unique constraints enforce "at most one user per email / per phone".
+    // Unique constraints enforce "at most one user per email / per phone /
+    // per Google account". NULL googleSubs never collide (Postgres treats
+    // NULLs as distinct in unique constraints).
     uniqueConstraints = [
         UniqueConstraint(name = "uk_users_email", columnNames = ["email"]),
-        UniqueConstraint(name = "uk_users_phone", columnNames = ["phone"])
+        UniqueConstraint(name = "uk_users_phone", columnNames = ["phone"]),
+        UniqueConstraint(name = "uk_users_google_sub", columnNames = ["google_sub"])
     ],
     // Feed/people-list sorting + active filtering. Applied by ddl-auto.
     indexes = [
@@ -54,8 +57,8 @@ class User {
     @field:Column(name = "last_name", nullable = false, length = 50)
     var lastName: String = ""
 
-    @field:Column(name = "date_of_birth", nullable = false)
-    var dateOfBirth: LocalDate = LocalDate.now()
+    @field:Column(name = "date_of_birth")
+    var dateOfBirth: LocalDate? = null
 
     // Enum is stored as a short string ('MALE', 'FEMALE', 'OTHER').
     @field:Column(name = "gender", nullable = false, length = 10)
@@ -80,6 +83,13 @@ class User {
 
     @field:Column(name = "password_hash", nullable = false, length = 255)
     var passwordHash: String = ""
+
+    // ==================== Google Sign-In ====================
+    // Stable Google user id ("sub" claim). NULL until the first Google
+    // sign-in; unique when present. Linked accounts keep password login.
+
+    @field:Column(name = "google_sub", length = 255)
+    var googleSub: String? = null
 
     // ==================== Photos ====================
     // Store the Cloudinary URLs returned after image upload.

@@ -12,6 +12,7 @@
  *   POST /api/auth/otp/verify        → verify an OTP
  *   POST /api/auth/forgot-password   → request a password-reset OTP
  *   POST /api/auth/forgot-password/reset → set a new password (OTP)
+ *   POST /api/auth/google             → Google sign-in (ID token)
  *
  * This endpoint needs login (JWT):
  *
@@ -21,6 +22,7 @@
 package com.smacian.backend.controller
 
 import com.smacian.backend.dto.request.ChangePasswordRequest
+import com.smacian.backend.dto.request.GoogleLoginRequest
 import com.smacian.backend.dto.request.LoginRequest
 import com.smacian.backend.dto.request.OtpSendRequest
 import com.smacian.backend.dto.request.OtpVerifyRequest
@@ -68,6 +70,16 @@ class AuthController(
     @PostMapping("/login")
     fun login(@Valid @RequestBody request: LoginRequest): ResponseEntity<LoginResponse> =
         ResponseEntity.ok(authService.login(request))
+
+    // ====================================================================
+    // 2b. GOOGLE SIGN-IN - verify ID token, login/link/auto-register
+    // ====================================================================
+    // Public (under POST /api/auth/**). Returns LoginResponse - the EXACT
+    // shape as /login, so the app reuses its login flow unchanged.
+
+    @PostMapping("/google")
+    fun googleLogin(@Valid @RequestBody request: GoogleLoginRequest): ResponseEntity<LoginResponse> =
+        ResponseEntity.ok(authService.googleLogin(request))
 
     // ====================================================================
     // 3. OTP SEND - during registration (contact verification)

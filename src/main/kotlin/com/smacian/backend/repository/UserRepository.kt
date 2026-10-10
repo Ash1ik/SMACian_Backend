@@ -40,6 +40,12 @@ interface UserRepository : JpaRepository<User, Long> {
     fun findByPhone(phone: String): Optional<User>
 
     /*
+     * SQL: SELECT * FROM users WHERE google_sub = ?
+     * Google sign-in lookup (stable Google user id, not email).
+     */
+    fun findByGoogleSub(googleSub: String): Optional<User>
+
+    /*
      * SQL: SELECT COUNT(*) FROM users WHERE email = ?
      * Returns true if the email is already taken.
      */

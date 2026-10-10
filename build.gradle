@@ -81,6 +81,10 @@ dependencies {
     // Cloudinary stores user profile photos and cover photos in the cloud.
     implementation 'com.cloudinary:cloudinary-http5:2.4.0'
 
+    // ====== Google sign-in (ID token verification) ======
+    // Verifies Android Credential Manager ID tokens against Google's certs.
+    implementation 'com.google.api-client:google-api-client:2.7.0'
+
     // ====== Firebase Cloud Messaging (push notifications) ======
     // Server SDK for FCM HTTP v1 (blood-request pushes only for now).
     // commons-logging excluded: it clashes with Spring's spring-jcl

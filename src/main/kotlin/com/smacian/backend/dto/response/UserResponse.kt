@@ -26,7 +26,9 @@ data class UserResponse(
     val email: String?,
     val phone: String?,
     val gender: Gender,
-    val dateOfBirth: LocalDate,
+    // Nullable since Google auto-register (no DOB from the ID token).
+    // Profile update requires it, so it fills in on first edit.
+    val dateOfBirth: LocalDate?,
     val profilePhotoUrl: String?,
     val coverPhotoUrl: String?,
     val isActive: Boolean,

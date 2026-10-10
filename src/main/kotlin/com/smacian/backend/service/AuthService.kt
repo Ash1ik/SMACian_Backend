@@ -15,6 +15,7 @@
 package com.smacian.backend.service
 
 import com.smacian.backend.dto.request.ChangePasswordRequest
+import com.smacian.backend.dto.request.GoogleLoginRequest
 import com.smacian.backend.dto.request.LoginRequest
 import com.smacian.backend.dto.request.RegisterRequest
 import com.smacian.backend.dto.request.ResetPasswordRequest
@@ -28,6 +29,10 @@ import com.smacian.backend.exception.ResourceNotFoundException
 import com.smacian.backend.repository.UserRepository
 import com.smacian.backend.security.JwtService
 import com.smacian.backend.util.ContactUtils
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
+import com.google.api.client.http.javanet.NetHttpTransport
+import com.google.api.client.json.gson.GsonFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -42,7 +47,8 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
     private val otpService: OtpService,
-    private val cloudinaryService: CloudinaryService
+    private val cloudinaryService: CloudinaryService,
+    @Value("\${GOOGLE_WEB_CLIENT_ID:}") private val googleWebClientId: String
 ) {
 
     // ====================================================================
@@ -136,6 +142,98 @@ class AuthService(
         // Success → generate the JWT token.
         val token = jwtService.generateToken(user)
         return LoginResponse(token = token)
+    }
+
+    // ====================================================================
+    // 2b. GOOGLE SIGN-IN (Android Credential Manager ID token)
+    // ====================================================================
+    /*
+     * a. Fail closed when GOOGLE_WEB_CLIENT_ID is missing (never accept
+     *    tokens we can't check an audience against).
+     * b. Verify signature + expiry + audience server-side against Google's
+     *    certs. Malformed tokens throw; bad signature/audience/expiry
+     *    returns null. BOTH become 401 - claims are never trusted raw.
+     * c. Identify by token `sub` (stable Google id), NOT email alone:
+     *      sub known          -> log in (no duplicate rows, ever)
+     *      email known        -> link googleSub, log in (password login kept)
+     *      neither            -> auto-register from token claims, log in
+     * d. Google-verified emails skip OTP entirely. ID tokens carry no DOB,
+     *    so Google users get dateOfBirth = null (profile update requires it
+     *    later). Avatar hotlinks the Google picture URL when present.
+     *
+     * Returns LoginResponse - the EXACT shape as POST /api/auth/login
+     * (token only), so the app reuses its login flow unchanged.
+     */
+    @Transactional
+    fun googleLogin(request: GoogleLoginRequest): LoginResponse {
+
+        if (googleWebClientId.isBlank()) {
+            throw IllegalStateException("Google sign-in is not configured (GOOGLE_WEB_CLIENT_ID missing)")
+        }
+
+        val rawToken = request.idToken.trim()
+        if (rawToken.isEmpty()) {
+            throw BadCredentialsException("Invalid Google token")
+        }
+
+        val verifier = GoogleIdTokenVerifier.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance())
+            .setAudience(listOf(googleWebClientId))
+            .setIssuer("https://accounts.google.com")
+            .build()
+
+        val idToken = try {
+            verifier.verify(rawToken)
+        } catch (e: Exception) {
+            null
+        } ?: throw BadCredentialsException("Invalid Google token")
+
+        val payload = idToken.payload
+        val sub = payload.subject?.takeIf { it.isNotBlank() }
+            ?: throw BadCredentialsException("Invalid Google token")
+
+        // ---- known Google account -> log in ----
+        val existingBySub = userRepository.findByGoogleSub(sub).orElse(null)
+        if (existingBySub != null) {
+            return LoginResponse(token = jwtService.generateToken(existingBySub))
+        }
+
+        // ---- email gate: must exist AND be Google-verified ----
+        val email = (payload.email ?: "").trim().lowercase()
+        if (email.isEmpty() || payload.emailVerified != true) {
+            throw BadCredentialsException("Invalid Google token")
+        }
+
+        // ---- known email (OTP-registered) -> link sub, log in ----
+        // Password login keeps working afterwards (hash untouched).
+        val existingByEmail = findByContact(email).orElse(null)
+        if (existingByEmail != null) {
+            existingByEmail.googleSub = sub
+            userRepository.save(existingByEmail)
+            return LoginResponse(token = jwtService.generateToken(existingByEmail))
+        }
+
+        // ---- brand new -> auto-register from token claims, no OTP ----
+        val givenName = (payload["given_name"] as? String)?.trim().takeIf { !it.isNullOrEmpty() }
+            ?: email.substringBefore("@").take(50)
+        val familyName = (payload["family_name"] as? String)?.trim() ?: ""
+        val picture = (payload["picture"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+
+        val user = User().apply {
+            this.email = email
+            firstName = givenName.take(50)
+            lastName = familyName.take(50)
+            // Random unusable secret: password login can never match it.
+            passwordHash = passwordEncoder.encode(java.util.UUID.randomUUID().toString())
+            googleSub = sub
+            profilePhotoUrl = picture
+                ?: cloudinaryService.getDefaultAvatarUrl(firstName, lastName)
+            termsAccepted = true
+            termsAcceptedAt = LocalDateTime.now()
+            isActive = true
+        }
+
+        val savedUser = userRepository.save(user)
+        return LoginResponse(token = jwtService.generateToken(savedUser))
     }
 
     // ====================================================================
