@@ -4,6 +4,8 @@
  * LIKE        = someone liked my post (referenceId = postId)
  * COMMENT     = someone commented on my post (referenceId = postId)
  * REPLY       = someone replied to my comment (referenceId = postId)
+ * COMMENT_LIKE = someone liked my comment/reply (referenceId = postId,
+ *               open the post - the liked comment shows its filled heart)
  * SHARE       = someone reshared my post (referenceId = the reshare postId)
  * BLOOD_MATCH = new blood request, fanned out to everyone (referenceId = bloodRequestId)
  * POST_CREATED = new feed post, fanned out to everyone (referenceId = postId)
@@ -15,6 +17,7 @@ enum class NotificationType {
     LIKE,
     COMMENT,
     REPLY,
+    COMMENT_LIKE,
     SHARE,
     BLOOD_MATCH,
     POST_CREATED,

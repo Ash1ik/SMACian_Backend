@@ -731,9 +731,9 @@ class NewsfeedService(
             .orElseThrow { ResourceNotFoundException("Comment not found") }
 
         if (!commentLikeRepository.existsByCommentIdAndUserId(commentId, userId)) {
-            if (!userRepository.existsById(userId)) {
-                throw ResourceNotFoundException("User not found")
-            }
+            val liker = userRepository.findById(userId)
+                .orElseThrow { ResourceNotFoundException("User not found") }
+            var isNewLike = false
             try {
                 newTx.executeWithoutResult {
                     val like = CommentLike().apply {
@@ -742,8 +742,42 @@ class NewsfeedService(
                     }
                     commentLikeRepository.saveAndFlush(like)
                 }
+                isNewLike = true
             } catch (e: DataIntegrityViolationException) {
                 // lost the race - the other request already liked
+            }
+            // Notify the COMMENT's author (never for self-likes). Only on
+            // NEW likes - repeat taps and lost races are silent. Push
+            // mirrors the inbox row, after commit.
+            if (isNewLike) {
+                val commentAuthorId = comment.author!!.id!!
+                if (commentAuthorId != userId) {
+                    val likeTitle = "${liker.fullName} liked your comment"
+                    val likeBody = "${liker.fullName} liked your comment."
+                    val postId = comment.post!!.id!!
+                    notificationService.notify(
+                        commentAuthorId,
+                        NotificationType.COMMENT_LIKE,
+                        likeTitle,
+                        likeBody,
+                        postId,
+                        actorId = userId
+                    )
+                    TransactionSynchronizationManager.registerSynchronization(
+                        object : TransactionSynchronization {
+                            override fun afterCommit() {
+                                try {
+                                    pushService.pushToUser(
+                                        commentAuthorId, likeTitle, likeBody,
+                                        NotificationType.COMMENT_LIKE, postId
+                                    )
+                                } catch (e: Exception) {
+                                    log.error("Post-commit FCM push failed for like on comment {}", commentId, e)
+                                }
+                            }
+                        }
+                    )
+                }
             }
         }
 
