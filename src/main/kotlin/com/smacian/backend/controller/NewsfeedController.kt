@@ -26,6 +26,7 @@ package com.smacian.backend.controller
 
 import com.smacian.backend.dto.request.CommentRequest
 import com.smacian.backend.dto.request.ShareRequest
+import com.smacian.backend.dto.response.CommentLikeResponse
 import com.smacian.backend.dto.response.CommentResponse
 import com.smacian.backend.dto.response.LikeResponse
 import com.smacian.backend.dto.response.PagedResponse
@@ -186,7 +187,7 @@ class NewsfeedController(
 
     @GetMapping("/{id}/comments")
     fun getComments(@PathVariable id: Long): ResponseEntity<List<CommentResponse>> {
-        val comments = newsfeedService.getComments(id)
+        val comments = newsfeedService.getComments(id, CurrentUser.getUserId())
         return ResponseEntity.ok(comments)
     }
 
@@ -213,6 +214,26 @@ class NewsfeedController(
     fun deleteComment(@PathVariable commentId: Long): ResponseEntity<Void> {
         newsfeedService.deleteComment(CurrentUser.getUserId(), commentId)
         return ResponseEntity.noContent().build()
+    }
+
+    // ====================================================================
+    // 11. LIKE a comment/reply (idempotent) -> { commentId, liked, likeCount }
+    // ====================================================================
+
+    @PostMapping("/comments/{commentId}/like")
+    fun likeComment(@PathVariable commentId: Long): ResponseEntity<CommentLikeResponse> {
+        val result = newsfeedService.likeComment(CurrentUser.getUserId(), commentId)
+        return ResponseEntity.ok(result)
+    }
+
+    // ====================================================================
+    // 12. UNLIKE a comment/reply (idempotent)
+    // ====================================================================
+
+    @DeleteMapping("/comments/{commentId}/like")
+    fun unlikeComment(@PathVariable commentId: Long): ResponseEntity<CommentLikeResponse> {
+        val result = newsfeedService.unlikeComment(CurrentUser.getUserId(), commentId)
+        return ResponseEntity.ok(result)
     }
 
     // ====================================================================

@@ -18,6 +18,11 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "Postgres is already running on localhost:5432" -ForegroundColor Green
 } else {
     Write-Host "Starting local Postgres (unclean shutdowns need WAL recovery - can take ~1 min)..." -ForegroundColor Yellow
+    # A reboot/sleep leaves a stale postmaster.pid lock with no process
+    # behind it; pg_ctl then refuses to start. Clear it when nothing runs.
+    if (-not (Get-Process postgres -ErrorAction SilentlyContinue)) {
+        Remove-Item (Join-Path $Data "postmaster.pid") -ErrorAction SilentlyContinue
+    }
     $Args = @(
         "start",
         "-D", $Data,

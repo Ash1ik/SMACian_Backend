@@ -14,12 +14,14 @@
  */
 package com.smacian.backend.service
 
+import com.smacian.backend.dto.response.CommentLikeResponse
 import com.smacian.backend.dto.response.CommentResponse
 import com.smacian.backend.dto.response.LikeResponse
 import com.smacian.backend.dto.response.PagedResponse
 import com.smacian.backend.dto.response.PostImageResponse
 import com.smacian.backend.dto.response.PostResponse
 import com.smacian.backend.entity.Comment
+import com.smacian.backend.entity.CommentLike
 import com.smacian.backend.entity.Post
 import com.smacian.backend.entity.PostImage
 import com.smacian.backend.entity.PostLike
@@ -27,6 +29,7 @@ import com.smacian.backend.entity.enums.NotificationType
 import com.smacian.backend.exception.BadRequestException
 import com.smacian.backend.exception.ForbiddenException
 import com.smacian.backend.exception.ResourceNotFoundException
+import com.smacian.backend.repository.CommentLikeRepository
 import com.smacian.backend.repository.CommentRepository
 import com.smacian.backend.repository.PostImageRepository
 import com.smacian.backend.repository.PostLikeRepository
@@ -52,6 +55,7 @@ class NewsfeedService(
     private val postImageRepository: PostImageRepository,
     private val postLikeRepository: PostLikeRepository,
     private val commentRepository: CommentRepository,
+    private val commentLikeRepository: CommentLikeRepository,
     private val userRepository: UserRepository,
     private val notificationService: NotificationService,
     private val pushService: PushService,
@@ -662,13 +666,22 @@ class NewsfeedService(
     // ====================================================================
     // 10. COMMENTS for a post (nested tree, oldest first)
     // ====================================================================
+    // Like counts + likedByMe come from 2 batched queries for the WHOLE
+    // tree (not per comment). Authors load per distinct author as before.
     @Transactional(readOnly = true)
-    fun getComments(postId: Long): List<CommentResponse> {
+    fun getComments(postId: Long, viewerId: Long): List<CommentResponse> {
 
         // 404 for ghost posts instead of an empty list.
         getPostById(postId)
 
         val all = commentRepository.findByPostIdOrderByCreatedAtAsc(postId)
+
+        val ids = all.map { it.id!! }
+        val likeCounts = if (ids.isEmpty()) emptyMap()
+        else commentLikeRepository.countByCommentIds(ids)
+            .associate { (it[0] as Long) to (it[1] as Long) }
+        val likedIds = if (ids.isEmpty()) emptySet()
+        else commentLikeRepository.findLikedCommentIds(ids, viewerId).toSet()
 
         // Group replies under their parent id, then build the tree
         // recursively (replies nest to any depth).
@@ -676,7 +689,13 @@ class NewsfeedService(
 
         fun buildTree(parentId: Long?): List<CommentResponse> =
             (byParentId[parentId] ?: emptyList()).map { comment ->
-                CommentResponse.fromEntity(comment, buildTree(comment.id))
+                val commentId = comment.id!!
+                CommentResponse.fromEntity(
+                    comment,
+                    buildTree(commentId),
+                    likeCount = likeCounts[commentId] ?: 0L,
+                    likedByMe = commentId in likedIds
+                )
             }
 
         return buildTree(null)
@@ -696,5 +715,61 @@ class NewsfeedService(
         }
 
         commentRepository.delete(comment)
+    }
+
+    // ====================================================================
+    // 12. LIKE a comment/reply (idempotent - liking twice stays liked)
+    // ====================================================================
+    // Same race-safe pattern as post likes: the INSERT runs in its own
+    // transaction, so a lost concurrent race rolls back only the inner tx.
+    // No notification for comment likes (keeps the inbox to author-level
+    // events: like/comment/reply/share on POSTS).
+    @Transactional
+    fun likeComment(userId: Long, commentId: Long): CommentLikeResponse {
+
+        val comment = commentRepository.findById(commentId)
+            .orElseThrow { ResourceNotFoundException("Comment not found") }
+
+        if (!commentLikeRepository.existsByCommentIdAndUserId(commentId, userId)) {
+            if (!userRepository.existsById(userId)) {
+                throw ResourceNotFoundException("User not found")
+            }
+            try {
+                newTx.executeWithoutResult {
+                    val like = CommentLike().apply {
+                        this.comment = commentRepository.getReferenceById(commentId)
+                        this.user = userRepository.getReferenceById(userId)
+                    }
+                    commentLikeRepository.saveAndFlush(like)
+                }
+            } catch (e: DataIntegrityViolationException) {
+                // lost the race - the other request already liked
+            }
+        }
+
+        return CommentLikeResponse(
+            commentId = commentId,
+            liked = true,
+            likeCount = commentLikeRepository.countByCommentId(commentId)
+        )
+    }
+
+    // ====================================================================
+    // 13. UNLIKE a comment/reply (idempotent)
+    // ====================================================================
+    @Transactional
+    fun unlikeComment(userId: Long, commentId: Long): CommentLikeResponse {
+
+        // 404 first so unliking a missing comment doesn't silently succeed.
+        if (!commentRepository.existsById(commentId)) {
+            throw ResourceNotFoundException("Comment not found")
+        }
+        commentLikeRepository.deleteByCommentIdAndUserId(commentId, userId)
+
+        return CommentLikeResponse(
+            commentId = commentId,
+            liked = false,
+            likeCount = commentLikeRepository.countByCommentId(commentId)
+        )
     }
 }
