@@ -67,7 +67,10 @@ class SecurityConfig(
                     // PUBLIC endpoints (no login required)
                     .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
                     .requestMatchers("/api/terms", "/api/privacy").permitAll()
-                    .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                    .requestMatchers("/actuator/health").permitAll()
+                    // Self-hosted admin panel (static page; every API call
+                    // it makes still carries a JWT and is gated as usual).
+                    .requestMatchers(HttpMethod.GET, "/admin.html").permitAll()
 
                     // Photo BYTEA streams - the mobile <Image> component loads
                     // these WITHOUT a JWT header, so they must be public. Only

@@ -20,6 +20,7 @@ import com.smacian.backend.entity.enums.Role
 import com.smacian.backend.exception.BadRequestException
 import com.smacian.backend.exception.ForbiddenException
 import com.smacian.backend.exception.ResourceNotFoundException
+import com.smacian.backend.repository.BloodRequestRepository
 import com.smacian.backend.repository.CommentRepository
 import com.smacian.backend.repository.NotificationRepository
 import com.smacian.backend.repository.PostRepository
@@ -34,6 +35,7 @@ class AdminService(
     private val userRepository: UserRepository,
     private val postRepository: PostRepository,
     private val commentRepository: CommentRepository,
+    private val bloodRequestRepository: BloodRequestRepository,
     private val notificationRepository: NotificationRepository,
     private val pushService: PushService
 ) {
@@ -54,6 +56,13 @@ class AdminService(
         val comment = commentRepository.findById(commentId)
             .orElseThrow { ResourceNotFoundException("Comment not found") }
         commentRepository.delete(comment)
+    }
+
+    @Transactional
+    fun deleteBloodRequest(requestId: Long) {
+        val request = bloodRequestRepository.findById(requestId)
+            .orElseThrow { ResourceNotFoundException("Blood request not found") }
+        bloodRequestRepository.delete(request)
     }
 
     // ====================================================================

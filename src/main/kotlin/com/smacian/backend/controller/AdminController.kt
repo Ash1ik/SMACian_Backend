@@ -3,6 +3,7 @@
  *
  *   DELETE /api/admin/posts/{id}        -> delete any post (+cascades)
  *   DELETE /api/admin/comments/{id}     -> delete any comment (+subtree)
+ *   DELETE /api/admin/blood-requests/{id} -> delete any blood request (+photos)
  *   PATCH  /api/admin/users/{id}/active -> ban/unban  {"active": false}
  *   PATCH  /api/admin/users/{id}/role   -> promote/demote {"role": "ADMIN"}
  *   POST   /api/admin/broadcast         -> announce to everyone
@@ -45,6 +46,12 @@ class AdminController(
     @DeleteMapping("/comments/{commentId}")
     fun deleteComment(@PathVariable commentId: Long): ResponseEntity<Void> {
         adminService.deleteComment(commentId)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/blood-requests/{id}")
+    fun deleteBloodRequest(@PathVariable id: Long): ResponseEntity<Void> {
+        adminService.deleteBloodRequest(id)
         return ResponseEntity.noContent().build()
     }
 
