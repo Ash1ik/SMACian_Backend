@@ -11,6 +11,7 @@
  */
 package com.smacian.backend.security
 
+import com.smacian.backend.exception.AuthenticationRequiredException
 import org.springframework.security.core.context.SecurityContextHolder
 
 object CurrentUser {
@@ -18,17 +19,22 @@ object CurrentUser {
     /*
      * Returns the authenticated user's ID.
      *
-     * @throws RuntimeException if no user is logged in
-     *         (shouldn't happen - SecurityConfig only lets authenticated
-     *          users reach these endpoints)
+     * @throws AuthenticationRequiredException (HTTP 401) if no user is
+     *         logged in (shouldn't happen - SecurityConfig only lets
+     *         authenticated users reach these endpoints).
      */
     fun getUserId(): Long {
         val authentication = SecurityContextHolder.getContext().authentication
 
-        requireNotNull(authentication) { "No authenticated user found" }
-        check(authentication.isAuthenticated) { "No authenticated user found" }
+        if (authentication == null || !authentication.isAuthenticated) {
+            throw AuthenticationRequiredException()
+        }
 
         // In JwtAuthenticationFilter, the "name" is the user ID as a String.
-        return authentication.name.toLong()
+        return try {
+            authentication.name.toLong()
+        } catch (e: NumberFormatException) {
+            throw AuthenticationRequiredException()
+        }
     }
 }

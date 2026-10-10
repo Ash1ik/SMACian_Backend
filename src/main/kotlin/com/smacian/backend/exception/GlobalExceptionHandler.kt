@@ -30,6 +30,7 @@ import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.multipart.support.MissingServletRequestPartException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -164,6 +165,38 @@ class GlobalExceptionHandler {
             path = getPath(request)
         )
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
+    }
+
+    // ====================================================================
+    // 4b. AUTHENTICATION REQUIRED (logged-in user missing mid-request)
+    // ====================================================================
+    // CurrentUser.getUserId() on an anonymous request -> HTTP 401 with a
+    // login prompt, NOT a 500 (the server is fine, the caller must log in).
+
+    @ExceptionHandler(AuthenticationRequiredException::class)
+    fun handleAuthenticationRequired(ex: AuthenticationRequiredException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.UNAUTHORIZED.value(),
+            error = "Unauthorized",
+            message = ex.message ?: "Authentication required. Please log in",
+            path = getPath(request)
+        )
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response)
+    }
+
+    // ====================================================================
+    // 4c. UNKNOWN ROUTE - e.g. GET /api/nonexistent -> HTTP 404, not 500.
+    // ====================================================================
+
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResourceFound(ex: NoResourceFoundException, request: WebRequest): ResponseEntity<ErrorResponse> {
+        val response = ErrorResponse(
+            status = HttpStatus.NOT_FOUND.value(),
+            error = "Not Found",
+            message = "No such endpoint: ${ex.resourcePath}",
+            path = getPath(request)
+        )
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response)
     }
 
     // ====================================================================
